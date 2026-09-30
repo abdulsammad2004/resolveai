@@ -1,0 +1,33 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+dist/
+.expo/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker volumes and data folders
+/data/
+docker-data/
+volumes/
