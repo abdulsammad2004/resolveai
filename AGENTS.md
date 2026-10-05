@@ -28,3 +28,29 @@ It provides secure customer service automation with human-in-the-loop approvals.
 - Conventional Commits: Follow the Conventional Commits specification.
 - Execution constraints: Do not install dependencies or run git commands unless the task says so.
 - Structure discipline: Ask before deviating from the folder structure.
+
+## Conventions
+
+### Stack
+- **Backend**: Python 3.11+, FastAPI, Pydantic v2, pydantic-settings, SQLAlchemy 2.0 async (asyncpg), Alembic, Redis.
+- **Database**: PostgreSQL 16 with pgvector.
+- **Web**: Next.js (App Router) + TypeScript + Tailwind in `apps/web` (later).
+
+### Backend Layout (`services/api`)
+- `app/main.py`: `create_app()` factory, mounts routers.
+- `app/core/`: config, database, security, shared dependencies.
+- `app/api/`: HTTP routers only (thin; no business logic). Feature routes mounted under `/api/v1`.
+- `app/modules/<feature>/`: `models.py`, `schemas.py`, `service.py` per feature (`tickets`, `knowledge`, `conversations`, `approvals`, `workspaces`, `auth`).
+- `app/ai/`: `prompts/` and `tools/` for LLM work.
+- `app/workers/`: background jobs.
+- `migrations/`: Alembic.
+- `tests/`: pytest.
+
+### Rules
+- Every table holding business data has a `workspace_id` column, and every query filters by it. Never trust a `workspace_id` sent by the client; derive it from the authenticated user.
+- Use FastAPI dependencies with `typing.Annotated` (e.g. `db: Annotated[AsyncSession, Depends(get_db)]`), not bare `Depends()` defaults.
+- UUID primary keys, timezone-aware `created_at`/`updated_at` on every table.
+- Secrets only via environment variables; never hardcode or log them.
+- Every new endpoint gets at least one pytest test.
+- Code must pass `ruff check .`.
+- Only create or edit the files a task names. Do not refactor unrelated files.
