@@ -37,12 +37,12 @@ flowchart TB
     MOB["Agent mobile app - Expo, later"]
   end
 
-  AUTHP["Managed auth provider<br/>issues JWTs"]
   GW["HTTPS ingress - Cloud Run<br/>TLS, CORS allowlist"]
 
   subgraph API["FastAPI service - modular monolith"]
-    MW["Middleware<br/>JWT check, tenant resolution,<br/>rate limit, request ID"]
+    MW["Middleware<br/>JWT check, workspace resolution,<br/>rate limit, request ID"]
     subgraph MODS["Domain modules"]
+      AU["auth + workspaces<br/>login, issues JWTs"]
       TK["tickets"]
       KN["knowledge"]
       CV["conversations"]
@@ -65,7 +65,7 @@ flowchart TB
   end
 
   subgraph DATA["Data layer"]
-    PG[("PostgreSQL + pgvector<br/>RLS on every tenant table")]
+    PG[("PostgreSQL + pgvector<br/>RLS on every workspace table")]
     RD[("Redis<br/>queue, cache, rate limits")]
     OBJ[("Object storage<br/>uploaded documents")]
   end
@@ -91,9 +91,6 @@ flowchart TB
   CW --> GW
   WEB --> GW
   MOB --> GW
-  WEB -. sign-in .-> AUTHP
-  MOB -. sign-in .-> AUTHP
-  AUTHP -. JWT .-> MW
   GW --> MW
   MW --> MODS
   MODS --> SM
@@ -123,7 +120,7 @@ flowchart TB
 
 **How to read it**
 
-1. A customer message enters through the gateway and middleware, which authenticates the caller and sets the tenant context (`SET LOCAL app.tenant_id`) for the database transaction.
+1. A customer message enters through the gateway and middleware, which authenticates the caller and sets the tenant context (transaction-local `app.workspace_id` and `app.user_id`) for the database transaction.
 2. A domain module stores the message, and the state machine moves the ticket to `classified`, then `drafting` (usually through a queued job).
 3. The AI layer classifies the message, then either retrieves knowledge (RAG), calls a read-only tool, or creates an approval request for a write action.
 4. The drafter produces a cited reply, which is saved as a draft in `pending_review`.
@@ -136,7 +133,7 @@ flowchart TB
 flowchart LR
   C[Customer channel] --> API
   A[Agent web app] --> API
-  API[FastAPI API<br/>auth + tenant context] --> DB[(PostgreSQL + pgvector<br/>RLS)]
+  API[FastAPI API<br/>auth + workspace context] --> DB[(PostgreSQL + pgvector<br/>RLS)]
   API --> R[(Redis)]
   API --> AI[AI layer]
   AI --> LLM[LLM provider]
@@ -159,19 +156,20 @@ flowchart LR
 
 ## 3. Multi-tenancy and data isolation
 
-**Decision:** shared database, shared schema. Every tenant-owned table has a `tenant_id` column, and **PostgreSQL Row-Level Security (RLS)** enforces isolation.
+**Decision:** shared database, shared schema. A tenant is a **workspace** (`workspaces` table). Every workspace-owned table has a `workspace_id` column, and **PostgreSQL Row-Level Security (RLS)** enforces isolation.
 
 Mechanics:
 
-1. Auth middleware resolves the user and their tenant membership.
-2. Each request opens a transaction and runs `SET LOCAL app.tenant_id = '<uuid>'`.
-3. RLS policies compare `tenant_id = current_setting('app.tenant_id')::uuid`.
+1. The auth dependency validates the access token and reads the user and workspace from it. The workspace in the token was verified against `memberships` when the token was issued (see Section 5).
+2. Each request opens a transaction and sets transaction-local context: `set_config('app.workspace_id', <uuid>, true)` and `set_config('app.user_id', <uuid>, true)` (the `SET LOCAL` equivalent, with bound parameters).
+3. RLS policies compare `workspace_id = current_setting('app.workspace_id')::uuid`. An unset setting becomes `NULL`, so a missing context matches no rows. `app.user_id` lets a user see their own memberships in other workspaces (for the workspace switcher), while writes are always limited to the current workspace.
 4. The app connects as a **non-superuser role without `BYPASSRLS`**, and tables use `FORCE ROW LEVEL SECURITY`.
 5. Migrations and admin tasks use a separate privileged role that the app never uses.
+6. `users` and `refresh_tokens` are global identity tables without RLS. They are only reached through the auth service.
 
 **Why**
 
-- Application-level `WHERE tenant_id = ...` depends on every developer (and every AI agent) remembering it, every time. RLS makes the database the last line of defense, so a forgotten filter returns zero rows instead of leaking data.
+- Application-level `WHERE workspace_id = ...` depends on every developer (and every AI agent) remembering it, every time. RLS makes the database the last line of defense, so a forgotten filter returns zero rows instead of leaking data.
 - Vector search also has to be tenant-scoped, and RLS covers the `chunks` table too.
 - `SET LOCAL` is scoped to the transaction, so a pooled connection can't carry one tenant's context into the next request.
 
@@ -180,7 +178,7 @@ Mechanics:
 - *Schema-per-tenant or DB-per-tenant:* stronger isolation but painful migrations and connection management at scale. Consider it later only for enterprise customers who demand it.
 - *App-layer filtering only:* one missed filter is a breach.
 
-**Mandatory test:** a cross-tenant leak test in CI. Create Tenant A and B data, query as A, and assert that B's rows are never returned from any endpoint, including search.
+**Mandatory test:** a cross-tenant leak test in CI. Create Workspace A and B data, query as A, and assert that B's rows are never returned from any endpoint, including search.
 
 ---
 
@@ -188,20 +186,21 @@ Mechanics:
 
 | Table | Purpose | Key columns |
 | --- | --- | --- |
-| `tenants` | A business workspace | id, name, settings (jsonb), created_at |
-| `users` | Identity (from auth provider) | id, external_auth_id, email |
-| `memberships` | User ↔ tenant with role | tenant_id, user_id, role (`admin`, `agent`, `viewer`) |
-| `documents` | Uploaded knowledge sources | tenant_id, title, source_type, status, content_hash |
-| `chunks` | Text pieces + embeddings | tenant_id, document_id, content, embedding (vector), position, metadata |
-| `tickets` | Support requests | tenant_id, status, category, priority, intent, assigned_to |
-| `conversations` | Thread per ticket/customer | tenant_id, ticket_id, channel |
-| `messages` | Individual messages | tenant_id, conversation_id, sender_type (`customer`, `agent`, `ai`), body |
-| `drafts` | AI-proposed replies | tenant_id, ticket_id, body, citations (jsonb), status, model_version, prompt_version |
-| `approvals` | Gated actions | tenant_id, ticket_id, action_type, payload (jsonb), status, requested_by, decided_by, idempotency_key |
-| `tool_calls` | Every tool invocation | tenant_id, ticket_id, tool_name, args (jsonb), result_summary, status, latency_ms |
-| `feedback` | Agent/customer ratings | tenant_id, draft_id, rating, edited_body |
-| `llm_usage` | Cost tracking | tenant_id, model, prompt_tokens, completion_tokens, cost, latency_ms |
-| `audit_log` | Append-only record | tenant_id, actor, action, entity, entity_id, before/after, at |
+| `workspaces` | A business workspace (the tenant) | id, name, slug, widget_public_key, allowed_origins, settings (jsonb), created_at |
+| `users` | Identity (global, no RLS) | id, email, password_hash, full_name, is_active |
+| `refresh_tokens` | Refresh sessions (global, no RLS) | id, user_id, workspace_id, token_hash, family_id, expires_at, revoked_at, replaced_by_id |
+| `memberships` | User ↔ workspace with role | workspace_id, user_id, role (`owner`, `admin`, `agent`) |
+| `documents` | Uploaded knowledge sources | workspace_id, title, source_type, status, content_hash |
+| `chunks` | Text pieces + embeddings | workspace_id, document_id, content, embedding (vector), position, metadata |
+| `tickets` | Support requests | workspace_id, status, category, priority, intent, assigned_to |
+| `conversations` | Thread per ticket/customer | workspace_id, ticket_id, channel |
+| `messages` | Individual messages | workspace_id, conversation_id, sender_type (`customer`, `agent`, `ai`), body |
+| `drafts` | AI-proposed replies | workspace_id, ticket_id, body, citations (jsonb), status, model_version, prompt_version |
+| `approvals` | Gated actions | workspace_id, ticket_id, action_type, payload (jsonb), status, requested_by, decided_by, idempotency_key |
+| `tool_calls` | Every tool invocation | workspace_id, ticket_id, tool_name, args (jsonb), result_summary, status, latency_ms |
+| `feedback` | Agent/customer ratings | workspace_id, draft_id, rating, edited_body |
+| `llm_usage` | Cost tracking | workspace_id, model, prompt_tokens, completion_tokens, cost, latency_ms |
+| `audit_log` | Append-only record | workspace_id, actor, action, entity, entity_id, before/after, at |
 
 **Why**
 
@@ -209,28 +208,39 @@ Mechanics:
 - **`approvals` is its own table** with a payload and idempotency key, so a refund is a durable, reviewable record and cannot execute twice.
 - **`drafts` stores `model_version` and `prompt_version`,** so when quality changes you can tell why.
 - **`audit_log` is append-only** (no UPDATE or DELETE grants). It is your evidence trail for sensitive actions.
-- **`tenant_id` is denormalized onto every table** (even child tables like `messages`) so RLS policies are simple, fast, and never need joins.
-- Use UUIDs for IDs so they aren't guessable, and add composite indexes starting with `tenant_id`.
+- **`workspace_id` is denormalized onto every workspace-owned table** (even child tables like `messages`) so RLS policies are simple, fast, and never need joins.
+- Use UUIDs for IDs so they aren't guessable, and add composite indexes starting with `workspace_id`.
 
 ---
 
 ## 5. Authentication and authorization
 
-**Decision:** a managed auth provider (Clerk, Auth0, or Supabase Auth) issues JWTs. The API validates them, maps the user to memberships, and enforces role-based access (RBAC).
+**Decision:** the API runs its own authentication (`services/api/app/core/security.py`, `app/modules/auth/`) and enforces role-based access (RBAC).
+
+- **Credentials:** email + password. Passwords are hashed with **argon2** (`argon2-cffi`). Login spends the same hashing time for unknown emails, so response timing doesn't reveal which emails are registered.
+- **Access token:** a JWT (HS256) that lives **15 minutes**, with claims `sub` (user ID), `wid` (workspace ID), `role`, plus `type`, `iat`, `exp`. It is sent as a `Bearer` header.
+- **Refresh token:** an opaque random token that lives **30 days**. Only its SHA-256 hash is stored in `refresh_tokens`, together with the `workspace_id` the session is active in. The raw token is sent to the browser as an `httpOnly` cookie scoped to `/api/v1/auth`.
+- **Rotation:** every refresh issues a new token in the same family and revokes the old one (`replaced_by_id`, `revoked_at`). Membership and `is_active` are re-checked on every refresh.
+- **Reuse detection:** presenting a token that was already rotated or revoked is treated as theft, and the **whole family is revoked**.
+- **Workspace switching:** a user with several memberships calls `/workspaces/{id}/switch`. The server verifies the membership and issues tokens for that workspace.
 
 | Role | Can do |
 | --- | --- |
-| `admin` | Manage workspace, users, knowledge base, settings, approve refunds |
-| `agent` | Handle tickets, review/edit/send drafts, request approvals |
-| `viewer` | Read-only dashboards |
+| `owner` | Everything, including deleting the workspace |
+| `admin` | Manage members, knowledge base, settings; approve sensitive actions (refunds, account changes) |
+| `agent` | Handle tickets, edit drafts, approve low-risk actions |
 
 **Why**
 
-- Password storage, MFA, session handling, and account recovery are security-critical and not your product. Managed providers get them right.
-- Tenant context comes from the **server-side membership lookup**, never from a client-supplied `tenant_id` header alone. A client can *select* among tenants it belongs to, but the server verifies membership.
+- Full control over the auth flow and the token claims (the workspace and role live in the token), with no extra vendor to integrate, pay for, or depend on.
+- Learning value: the team owns and understands every step of the session lifecycle.
+- Short-lived access tokens limit the damage of a leaked token. Rotating, hashed refresh tokens with family revocation make a stolen refresh token detectable and short-lived.
+- Workspace context comes from the **server-side membership lookup**, never from a client-supplied `workspace_id`. A client can *select* among workspaces it belongs to, but the server verifies membership.
 - Authorization is checked at two layers: role checks in the API (what you may do) and RLS in the database (which rows exist for you).
 
-**Customer-facing channel:** customers are not users. They authenticate with a per-tenant, scoped widget key or signed token, with tight rate limits and no access beyond submitting messages and reading their own thread.
+**Rejected:** a managed auth provider (Clerk, Auth0, or Supabase Auth). It would take password storage, MFA, and account recovery off our hands, but costs control and adds a vendor. It can be revisited later (for example, for SSO or MFA requirements).
+
+**Customer-facing channel:** customers are not users. They authenticate with a per-workspace, scoped widget key or signed token, with tight rate limits and no access beyond submitting messages and reading their own thread.
 
 ---
 
@@ -266,7 +276,7 @@ Main resources: `/tickets`, `/tickets/{id}/messages`, `/tickets/{id}/drafts`, `/
 1. Upload → store the original file in object storage (a GCS bucket; local disk in dev) and create a `documents` row with status `pending`.
 2. Worker parses text (PDF, DOCX, MD, TXT).
 3. Chunk into about 500 to 800 tokens with 10 to 15% overlap, preserving headings as metadata.
-4. Embed in batches and insert into `chunks` with `tenant_id`.
+4. Embed in batches and insert into `chunks` with `workspace_id`.
 5. Mark the document `ready` or `failed` (with a reason).
 
 **Query flow**
@@ -325,13 +335,13 @@ Routing is deterministic code that consumes this output (assignment rules, urgen
 Rules:
 
 - Each tool has a Pydantic input schema, a timeout, bounded retries, and a declared side-effect level.
-- The **tenant ID is injected by the runtime**, never taken from model output. The model cannot ask for another tenant's order.
-- Arguments are validated against the schema *and* against business checks (for example, the order belongs to this tenant and customer).
+- The **workspace ID is injected by the runtime**, never taken from model output. The model cannot ask for another workspace's order.
+- Arguments are validated against the schema *and* against business checks (for example, the order belongs to this workspace and customer).
 - The model can never supply a URL or SQL. Tools call fixed, configured endpoints.
 - Write tools do not execute when the model requests them. They create an `approvals` row (see Section 10).
 - Every call is logged in `tool_calls`.
 
-**Why:** the model is an untrusted planner. Treating it like a user-facing form (validate everything, permit little) is what makes tool use safe. Separating read tools from write tools means the worst a manipulated model can do is read data the customer is already entitled to, and even that is scoped to the tenant.
+**Why:** the model is an untrusted planner. Treating it like a user-facing form (validate everything, permit little) is what makes tool use safe. Separating read tools from write tools means the worst a manipulated model can do is read data the customer is already entitled to, and even that is scoped to the workspace.
 
 **MCP:** deferred. Wrap tools behind the same internal interface now, so an MCP server can expose them later without rewriting business logic.
 
@@ -381,7 +391,7 @@ Rules:
 
 ## 11. Background jobs and reliability
 
-**Decision:** Redis-backed queue with workers (Celery, or a lighter alternative such as ARQ/RQ if you prefer async).
+**Decision:** **arq**, a Redis-backed async job queue, with workers built from the same codebase.
 
 Every job has: a retry policy with exponential backoff and a cap, a timeout, an idempotency key, and a dead-letter state that alerts and is visible in the dashboard.
 
@@ -392,6 +402,12 @@ Every job has: a retry policy with exponential backoff and a cap, a timeout, an 
 - LLM and external API calls fail and slow down. Bounded retries handle transient failures without infinite loops or runaway cost.
 - Idempotency handles the classic at-least-once delivery problem, so a retried refund job never refunds twice.
 - Redis is already needed for rate limiting and caching, so no extra infrastructure.
+- arq is asyncio-native, so jobs reuse the same async SQLAlchemy sessions, tenant-context helpers, and service code as the API instead of a parallel sync stack.
+
+**Rejected**
+
+- *Celery:* mature, but sync-first. Async SQLAlchemy code would need wrappers or a second sync data layer, and it brings more configuration and moving parts than this MVP needs.
+- *RQ:* simple, but sync-only, with the same mismatch with the async codebase.
 
 **Consider later:** Postgres-based queues if you want to remove Redis from the critical path (transactional enqueue).
 
@@ -403,7 +419,7 @@ Every job has: a retry policy with exponential backoff and a cap, a timeout, an 
 | --- | --- |
 | Cross-tenant data access | RLS + tenant-scoped queries + CI leak tests |
 | Prompt injection (in documents or customer messages) | Treat all retrieved and customer text as data. Delimit it, tell the model it is untrusted, and never let it change tool permissions. Validate outputs. **Structural defense: write actions need human approval regardless of what the model says.** |
-| Malicious tool arguments | Strict schemas, server-injected tenant ID, no model-supplied URLs or SQL |
+| Malicious tool arguments | Strict schemas, server-injected workspace ID, no model-supplied URLs or SQL |
 | Data exfiltration via model output | Output schemas, citation checks, no tool that sends data externally |
 | Abuse / cost attacks | Per-tenant and per-IP rate limits, token budgets, max input sizes |
 | Malicious uploads | File type and size limits, parse in the worker (not the API), no code execution |
@@ -421,7 +437,7 @@ Also: HTTPS everywhere, CORS locked to your web origin, dependency scanning (Dep
 
 **Decision:** structured JSON logs, distributed traces (OpenTelemetry), and metrics, with a request ID propagated across API, worker, and LLM calls.
 
-Track per request: tenant ID, model version, prompt version, retrieval scores, tool calls, token counts, cost, and latency (broken down by retrieval, LLM, and tools).
+Track per request: workspace ID, model version, prompt version, retrieval scores, tool calls, token counts, cost, and latency (broken down by retrieval, LLM, and tools).
 
 **Dashboards and alerts**
 
@@ -510,9 +526,9 @@ Build in dependency order: **foundation → tenancy/RLS → knowledge/RAG → ti
 
 1. Modular monolith
 2. Shared schema + RLS tenancy
-3. Managed auth provider (choose one)
+3. Own JWT auth with rotating refresh tokens
 4. pgvector for embeddings
-5. Queue technology (Celery vs ARQ/RQ)
+5. arq for background jobs
 6. State machine over an autonomous agent loop
 7. REST tools now, MCP later
 8. LLM provider and embedding model choice
@@ -520,6 +536,8 @@ Build in dependency order: **foundation → tenancy/RLS → knowledge/RAG → ti
 **Open questions for the team**
 
 - Which LLM and embedding model? (This fixes the vector dimension, so decide before the first migration.)
-- Which auth provider?
-- How are customers reaching the system in the MVP: an embedded chat widget, email inbox, or both?
 - Is the repo private? (This affects branch protection features.)
+
+**Answered**
+
+- How are customers reaching the system in the MVP? Embedded chat widget for the MVP; email later.
