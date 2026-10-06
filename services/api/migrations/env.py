@@ -14,8 +14,8 @@ from app.core.database import Base
 # from app.modules.knowledge import models as knowledge_models
 # from app.modules.conversations import models as conversations_models
 # from app.modules.approvals import models as approvals_models
-# from app.modules.workspaces import models as workspaces_models
-# from app.modules.auth import models as auth_models
+from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.workspaces import models as workspaces_models  # noqa: F401
 
 config = context.config
 
@@ -25,7 +25,10 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Migrations run as the owner role, never the API runtime role.
+# `alembic -x db_url=...` overrides it (used by the test suite).
+db_url = context.get_x_argument(as_dictionary=True).get("db_url", settings.migrations_database_url)
+config.set_main_option("sqlalchemy.url", db_url)
 
 
 def run_migrations_offline() -> None:
