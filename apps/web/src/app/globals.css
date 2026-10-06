@@ -1,0 +1,336 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * ResolveAI design tokens: "frosted glass over deep water".
+ * DESIGN.md documents every token and rule below. Dark theme only.
+ */
+
+/* Registered so hover can animate the glass fill (it lives inside a gradient). */
+@property --glass-fill {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: rgb(255 255 255 / 0.07);
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Palette */
+  --deep: #0e1b2c;
+  --tide: #1f4e5f;
+  --mist: #e8f1f5;
+  --mist-dim: #9fb4c2;
+  --seafoam: #7fe0c8;
+  --amber: #f5b85a;
+  --coral: #ff8a7a;
+
+  /* Glass. The depth tint sits under the white fill so body text keeps WCAG AA
+     contrast over the brightest glow (see DESIGN.md, "Contrast"). */
+  --glass-tint: rgb(14 27 44 / 0.55);
+  --glass-tint-elevated: rgb(14 27 44 / 0.6);
+  --glass-fill-rest: rgb(255 255 255 / 0.07);
+  --glass-fill-hover: rgb(255 255 255 / 0.1);
+  --glass-fill-elevated: rgb(255 255 255 / 0.11);
+  --glass-fill-input: rgb(255 255 255 / 0.05);
+  --glass-border: rgb(255 255 255 / 0.14);
+  --glass-highlight: rgb(255 255 255 / 0.18);
+  --glass-blur: blur(20px) saturate(140%);
+  --glass-blur-elevated: blur(28px) saturate(140%);
+
+  /* shadcn semantic aliases, mapped onto the palette */
+  --background: var(--deep);
+  --foreground: var(--mist);
+  --card: var(--glass-tint);
+  --card-foreground: var(--mist);
+  --popover: var(--glass-tint-elevated);
+  --popover-foreground: var(--mist);
+  --primary: var(--seafoam);
+  --primary-foreground: var(--deep);
+  --secondary: var(--glass-fill-rest);
+  --secondary-foreground: var(--mist);
+  --muted: var(--glass-fill-rest);
+  --muted-foreground: var(--mist-dim);
+  --accent: var(--glass-fill-hover);
+  --accent-foreground: var(--mist);
+  --destructive: var(--coral);
+  --border: var(--glass-border);
+  --input: var(--glass-border);
+  --ring: var(--seafoam);
+  --radius: 14px;
+}
+
+/* No backdrop-filter support, or the user asked for less transparency:
+   panels become solid so nothing depends on blur. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-tint: #16263a;
+    --glass-tint-elevated: #1a2c42;
+    --glass-fill-rest: transparent;
+    --glass-fill-hover: rgb(255 255 255 / 0.04);
+    --glass-fill-elevated: transparent;
+    --glass-blur: none;
+    --glass-blur-elevated: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-tint: #16263a;
+    --glass-tint-elevated: #1a2c42;
+    --glass-fill-rest: transparent;
+    --glass-fill-hover: rgb(255 255 255 / 0.04);
+    --glass-fill-elevated: transparent;
+    --glass-blur: none;
+    --glass-blur-elevated: none;
+  }
+}
+
+@theme inline {
+  /* Colours: bg-deep, text-mist, text-mist-dim, bg-seafoam, text-amber, ... */
+  --color-deep: var(--deep);
+  --color-tide: var(--tide);
+  --color-mist: var(--mist);
+  --color-mist-dim: var(--mist-dim);
+  --color-seafoam: var(--seafoam);
+  --color-amber: var(--amber);
+  --color-coral: var(--coral);
+  --color-panel-solid: #16263a;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Typography */
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-bricolage), var(--font-instrument), ui-sans-serif, sans-serif;
+
+  /* Type scale: 13 / 15 (body) / 18 / 24 / 32 / 44 */
+  --text-sm: 13px;
+  --text-sm--line-height: 1.5;
+  --text-base: 15px;
+  --text-base--line-height: 1.5;
+  --text-lg: 18px;
+  --text-lg--line-height: 1.4;
+  --text-xl: 24px;
+  --text-xl--line-height: 1.15;
+  --text-2xl: 32px;
+  --text-2xl--line-height: 1.15;
+  --text-3xl: 44px;
+  --text-3xl--line-height: 1.15;
+
+  /* Radius by hierarchy: panels 24, cards and inputs 14, chips are pills */
+  --radius-panel: 24px;
+  --radius-card: 14px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 14px;
+  --radius-xl: 24px;
+
+  --animate-rise: rise 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* ---- Glass surfaces ------------------------------------------------------ */
+
+@utility glass {
+  --glass-fill: var(--glass-fill-rest);
+  background-color: var(--glass-tint);
+  background-image: linear-gradient(var(--glass-fill), var(--glass-fill));
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+/* Menus, dialogs, toasts. */
+@utility glass-elevated {
+  --glass-fill: var(--glass-fill-elevated);
+  background-color: var(--glass-tint-elevated);
+  background-image: linear-gradient(var(--glass-fill), var(--glass-fill));
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-blur-elevated);
+  backdrop-filter: var(--glass-blur-elevated);
+}
+
+/* Glass that reacts to the pointer (secondary buttons, nav links). */
+@utility glass-interactive {
+  transition:
+    --glass-fill 150ms ease,
+    transform 120ms ease,
+    background-color 150ms ease;
+  &:hover:not(:disabled) {
+    --glass-fill: var(--glass-fill-hover);
+  }
+}
+
+/* Inputs: a lighter fill so they read as wells inside a panel. */
+@utility glass-input {
+  background-color: rgb(14 27 44 / 0.35);
+  background-image: linear-gradient(var(--glass-fill-input), var(--glass-fill-input));
+  border: 1px solid var(--glass-border);
+}
+
+/* Press feedback. */
+@utility pressable {
+  transition: transform 120ms ease;
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+/* App-shell entrance: 8px rise, staggered 60ms via --i. */
+@utility rise-in {
+  animation: var(--animate-rise);
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* Mobile navigation slides in from the left (interactive, user-triggered). */
+.slide-over {
+  animation: slide-over-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes slide-over-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Indeterminate progress for the session-restore screen (feedback, not decoration). */
+.loader-bar {
+  animation: loader-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes loader-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* ---- Page backdrop ------------------------------------------------------- */
+
+/* Static glows, off-centre, plus ~3% SVG noise so the blur doesn't band. */
+.page-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--deep);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"),
+    radial-gradient(
+      ellipse 42vmax 34vmax at 86% 84%,
+      rgb(127 224 200 / 0.1) 0%,
+      rgb(127 224 200 / 0.04) 45%,
+      transparent 75%
+    ),
+    radial-gradient(
+      ellipse 62vmax 50vmax at 6% 2%,
+      rgb(31 78 95 / 0.7) 0%,
+      rgb(31 78 95 / 0.32) 40%,
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 56vmax 46vmax at 100% 100%,
+      rgb(31 78 95 / 0.6) 0%,
+      rgb(31 78 95 / 0.26) 42%,
+      transparent 72%
+    );
+}
+
+/* ---- Base ---------------------------------------------------------------- */
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-deep text-base text-mist;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  /* Visible keyboard focus everywhere: seafoam, 2px, offset 2px. */
+  :focus-visible {
+    outline: 2px solid var(--seafoam);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: rgb(127 224 200 / 0.3);
+  }
+}
+
+/* No movement for people who ask for less motion: fades only. */
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .slide-over {
+    animation-name: fade-only;
+  }
+  .pressable:active,
+  .glass-interactive:active {
+    transform: none !important;
+  }
+  .loader-bar {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+  @keyframes fade-only {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
