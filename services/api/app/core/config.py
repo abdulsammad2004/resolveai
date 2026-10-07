@@ -1,11 +1,13 @@
 import json
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-insecure-jwt-secret-change-me"
+# Fixed by the document_chunks.embedding column; changing it needs a migration.
+EMBEDDING_COLUMN_DIM = 1536
 
 
 class Settings(BaseSettings):
@@ -35,6 +37,16 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 30
     refresh_cookie_secure: bool = False
 
+    # Knowledge ingestion. OPENAI_API_KEY is checked when the embedding client is built
+    # (worker startup), so the API can run without it.
+    openai_api_key: SecretStr | None = None
+    embedding_provider: Literal["openai", "fake"] = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = EMBEDDING_COLUMN_DIM
+    storage_backend: Literal["local"] = "local"
+    local_storage_dir: str = "./storage"
+    max_upload_mb: int = 20
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:
@@ -44,6 +56,14 @@ class Settings(BaseSettings):
                 return json.loads(v)
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @model_validator(mode="after")
+    def validate_embedding_dim(self) -> "Settings":
+        if self.embedding_dim != EMBEDDING_COLUMN_DIM:
+            raise ValueError(
+                f"EMBEDDING_DIM must be {EMBEDDING_COLUMN_DIM} to match the database column"
+            )
+        return self
 
     @model_validator(mode="after")
     def require_production_secrets(self) -> "Settings":

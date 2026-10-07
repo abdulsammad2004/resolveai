@@ -21,6 +21,12 @@ dependencies = [
     "argon2-cffi",
     "pyjwt",
     "email-validator",
+    "arq",
+    "openai",
+    "tiktoken",
+    "pypdf",
+    "python-docx",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]

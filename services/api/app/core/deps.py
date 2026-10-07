@@ -1,5 +1,6 @@
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -62,9 +63,21 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def get_tenant_db(principal: CurrentPrincipal) -> AsyncGenerator[AsyncSession, None]:
+@asynccontextmanager
+async def tenant_session(
+    workspace_id: uuid.UUID, user_id: uuid.UUID | None = None
+) -> AsyncIterator[AsyncSession]:
+    """One transaction as the app role with RLS context set. Commits on success.
+
+    Shared by request handlers (via get_tenant_db) and background workers.
+    """
     async with async_session_factory() as session, session.begin():
-        await set_tenant_context(session, principal.workspace_id, principal.user_id)
+        await set_tenant_context(session, workspace_id, user_id)
+        yield session
+
+
+async def get_tenant_db(principal: CurrentPrincipal) -> AsyncGenerator[AsyncSession, None]:
+    async with tenant_session(principal.workspace_id, principal.user_id) as session:
         yield session
 
 
