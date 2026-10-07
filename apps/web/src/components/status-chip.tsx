@@ -1,30 +1,47 @@
 import * as React from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/utils";
 
-export type ChipTone = "seafoam" | "amber" | "coral" | "neutral";
+export type ChipTone = "resolved" | "review" | "urgent" | "neutral" | "ion";
 
-// Accent at 16% over a deep base, so the accent text keeps AA contrast on any glass.
 const tones: Record<ChipTone, string> = {
-  seafoam: "text-seafoam [--chip:rgb(127_224_200_/_0.16)]",
-  amber: "text-amber [--chip:rgb(245_184_90_/_0.16)]",
-  coral: "text-coral [--chip:rgb(255_138_122_/_0.16)]",
-  neutral: "text-mist [--chip:rgb(255_255_255_/_0.1)]",
+  resolved: "text-resolved bg-resolved/10 border-resolved/20",
+  review: "text-review bg-review/10 border-review/20",
+  urgent: "text-urgent bg-urgent/10 border-urgent/20",
+  ion: "text-ion bg-ion/10 border-ion/20",
+  neutral: "text-ash bg-white/[0.04] border-line",
 };
 
 export function StatusChip({
   tone = "neutral",
+  dot = false,
   className,
+  children,
   ...props
-}: React.ComponentProps<"span"> & { tone?: ChipTone }) {
+}: React.ComponentProps<"span"> & { tone?: ChipTone; dot?: boolean }) {
   return (
     <span
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full bg-deep/60 bg-[linear-gradient(var(--chip),var(--chip))] px-3 text-sm font-medium whitespace-nowrap",
+        "inline-flex h-6 items-center gap-1.5 rounded-[4px] border px-2 text-xs font-medium tracking-wide whitespace-nowrap select-none",
         tones[tone],
-        className,
+        className
       )}
       {...props}
-    />
+    >
+      {dot && (
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            tone === "resolved" && "bg-resolved pulse-active",
+            tone === "review" && "bg-review",
+            tone === "urgent" && "bg-urgent",
+            tone === "ion" && "bg-ion",
+            tone === "neutral" && "bg-ash"
+          )}
+          aria-hidden
+        />
+      )}
+      {children}
+    </span>
   );
 }
 
@@ -35,7 +52,7 @@ export const roleLabel: Record<"owner" | "admin" | "agent", string> = {
 };
 
 export const roleTone: Record<"owner" | "admin" | "agent", ChipTone> = {
-  owner: "seafoam",
+  owner: "ion",
   admin: "neutral",
   agent: "neutral",
 };

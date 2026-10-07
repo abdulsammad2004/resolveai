@@ -1,4 +1,3 @@
-import { ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
@@ -10,7 +9,7 @@ export default function ApprovalsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Approvals" />
-      <EmptyState icon={ShieldCheck} title="Nothing to approve">
+      <EmptyState illustration="approvals" title="Nothing to approve">
         When tool actions switch on after ticket intake, refunds and account changes the assistant
         proposes will wait here until an admin approves or rejects them.
       </EmptyState>

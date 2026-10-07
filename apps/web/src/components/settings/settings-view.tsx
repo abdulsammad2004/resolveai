@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { errorMessage } from "@/lib/api/errors";
 import {
@@ -41,15 +41,21 @@ export function SettingsView() {
   const canEdit = role === "owner" || role === "admin";
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title="Settings" description="Your workspace, your chat widget and your team." />
+    <div className="flex flex-col gap-6 max-w-5xl mx-auto">
+      <PageHeader title="Settings" description="Manage your workspace, embeddable chat widget, and team access." />
 
       {settings.isPending && (
-        <GlassPanel>
-          <p className="text-mist-dim" role="status">
-            Loading workspace settings…
-          </p>
-        </GlassPanel>
+        <>
+          <GlassPanel aria-busy="true" aria-label="Loading workspace settings" className="flex flex-col gap-5">
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-10 w-full max-w-xl" />
+            <Skeleton className="h-20 w-full max-w-xl" />
+          </GlassPanel>
+          <GlassPanel aria-busy="true" aria-label="Loading widget key" className="flex flex-col gap-4">
+            <Skeleton className="h-7 w-56" />
+            <Skeleton className="h-10 w-full max-w-2xl" />
+          </GlassPanel>
+        </>
       )}
       {settings.isError && (
         <GlassPanel>
@@ -94,7 +100,6 @@ function WorkspacePanel({ settings, canEdit }: { settings: WorkspaceSettings; ca
   const update = useUpdateWorkspaceSettings();
   const form = useForm<WorkspaceValues>({
     resolver: zodResolver(workspaceSchema),
-    // `values` re-syncs the form whenever the saved settings change.
     values: {
       name: settings.name,
       allowed_origins: settings.allowed_origins.join("\n"),
@@ -115,15 +120,14 @@ function WorkspacePanel({ settings, canEdit }: { settings: WorkspaceSettings; ca
 
   return (
     <GlassPanel aria-labelledby="workspace-heading" className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1.5">
-        <h2 id="workspace-heading" className="text-xl font-semibold">
-          Workspace
+      <div className="flex flex-col gap-1">
+        <h2 id="workspace-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+          Workspace profile
         </h2>
         {!canEdit && (
-          <p className="flex items-start gap-2 text-mist-dim">
-            <Lock className="mt-1 size-4 shrink-0" aria-hidden />
-            Only owners and admins can change these settings, because they control who can reach
-            your chat widget. Ask one of them if something needs updating.
+          <p className="flex items-start gap-2 text-xs text-ash">
+            <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Only owners and admins can edit workspace properties and allowed widget origins.
           </p>
         )}
       </div>
@@ -148,19 +152,19 @@ function WorkspacePanel({ settings, canEdit }: { settings: WorkspaceSettings; ca
             name="allowed_origins"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Allowed origins</FormLabel>
+                <FormLabel>Allowed web origins</FormLabel>
                 <FormControl>
                   <Textarea
                     readOnly={!canEdit}
                     rows={3}
                     spellCheck={false}
                     placeholder={canEdit ? "https://shop.example.com" : "No origins added yet"}
-                    className="font-mono text-sm"
+                    className="font-mono text-xs"
                     {...field}
                   />
                 </FormControl>
                 <FormDescription>
-                  Websites allowed to load your chat widget. Put one on each line.
+                  Websites allowed to embed and initialize your AI chat widget. One domain per line.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -186,7 +190,7 @@ function WidgetKeyPanel({ widgetKey }: { widgetKey: string }) {
   async function copyKey() {
     try {
       await navigator.clipboard.writeText(widgetKey);
-      toast.success("Copied");
+      toast.success("Copied to clipboard");
     } catch {
       toast.error("Couldn't copy the key. Select it and copy it by hand.");
     }
@@ -194,13 +198,12 @@ function WidgetKeyPanel({ widgetKey }: { widgetKey: string }) {
 
   return (
     <GlassPanel aria-labelledby="widget-heading" className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <h2 id="widget-heading" className="text-xl font-semibold">
-          Chat widget key
+      <div className="flex flex-col gap-1">
+        <h2 id="widget-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+          Chat widget public key
         </h2>
-        <p className="max-w-2xl text-mist-dim">
-          Your chat widget uses this public key to send customer messages to this workspace. It
-          only works on the allowed origins above.
+        <p className="max-w-2xl text-sm text-ash">
+          Embed this public key into your website client SDK to identify and scope conversations to this tenant.
         </p>
       </div>
       <div className="flex max-w-2xl flex-col gap-2">
@@ -210,11 +213,11 @@ function WidgetKeyPanel({ widgetKey }: { widgetKey: string }) {
             id="widget-key"
             readOnly
             value={widgetKey}
-            className="font-mono text-sm"
+            className="font-mono text-xs text-bone"
             onFocus={(e) => e.currentTarget.select()}
           />
-          <Button type="button" variant="secondary" onClick={copyKey} className="shrink-0">
-            <Copy aria-hidden />
+          <Button type="button" variant="secondary" onClick={copyKey} className="shrink-0 gap-1.5">
+            <Copy className="size-3.5" aria-hidden />
             Copy key
           </Button>
         </div>
@@ -229,39 +232,46 @@ function MembersPanel() {
 
   return (
     <GlassPanel aria-labelledby="members-heading" className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <h2 id="members-heading" className="text-xl font-semibold">
-          Members
+      <div className="flex flex-col gap-1">
+        <h2 id="members-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+          Workspace members
         </h2>
-        <p className="text-mist-dim">Everyone who can work in this workspace, and their role.</p>
+        <p className="text-sm text-ash">Authorized team members with role-based workspace permissions.</p>
       </div>
 
       {members.isPending && (
-        <p className="text-mist-dim" role="status">
-          Loading members…
-        </p>
+        <ul aria-busy="true" aria-label="Loading members" className="flex flex-col gap-4">
+          {[0, 1].map((i) => (
+            <li key={i} className="flex items-center gap-3">
+              <Skeleton className="size-9 rounded-full" />
+              <div className="flex flex-1 flex-col gap-2">
+                <Skeleton className="h-3.5 w-40" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
       {members.isError && <FormError>{errorMessage(members.error)}</FormError>}
       {members.data && (
-        <ul className="flex flex-col">
-          {members.data.map((member, i) => (
-            <li key={member.user_id}>
-              {i > 0 && <Separator />}
-              <div className="flex items-center gap-3 py-3.5">
-                <Avatar>
+        <ul className="flex flex-col divide-y divide-line">
+          {members.data.map((member) => (
+            <li key={member.user_id} className="flex items-center justify-between py-3.5">
+              <div className="flex items-center gap-3">
+                <Avatar className="size-9 border border-line bg-carbon-elevated text-xs font-semibold text-bone">
                   <AvatarFallback>{initials(member.full_name)}</AvatarFallback>
                 </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-bone">
                     {member.full_name}
                     {member.user_id === user?.id && (
-                      <span className="font-normal text-mist-dim"> (you)</span>
+                      <span className="font-normal text-ash"> (you)</span>
                     )}
                   </p>
-                  <p className="truncate text-sm text-mist-dim">{member.email}</p>
+                  <p className="truncate text-xs text-ash">{member.email}</p>
                 </div>
-                <StatusChip tone={roleTone[member.role]}>{roleLabel[member.role]}</StatusChip>
               </div>
+              <StatusChip tone={roleTone[member.role]}>{roleLabel[member.role]}</StatusChip>
             </li>
           ))}
         </ul>
