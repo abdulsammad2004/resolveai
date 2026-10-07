@@ -18,6 +18,9 @@ dependencies = [
     "alembic",
     "pgvector",
     "redis",
+    "argon2-cffi",
+    "pyjwt",
+    "email-validator",
 ]
 
 [project.optional-dependencies]
