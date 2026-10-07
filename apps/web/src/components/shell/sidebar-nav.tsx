@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion } from "motion/react";
 import { cn } from "cn";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -24,35 +25,44 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+interface SidebarNavProps {
+  onNavigate?: () => void;
+  collapsed?: boolean;
+}
+
+export function SidebarNav({ onNavigate, collapsed = false }: SidebarNavProps) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Main">
-      <ul className="flex flex-col gap-1">
+    <nav aria-label="Main" className="flex-1">
+      <ul className="flex flex-col gap-1.5">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(`${href}/`);
+          const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
           return (
             <li key={href}>
               <Link
                 href={href}
                 onClick={onNavigate}
+                title={collapsed ? label : undefined}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "pressable relative flex h-11 items-center gap-3 rounded-card px-3.5 text-base font-medium transition-colors",
+                  "pressable relative flex h-10 items-center gap-3 rounded-[6px] px-3 text-sm font-medium transition-colors",
                   active
-                    ? "bg-white/[0.12] text-mist shadow-[inset_0_1px_0_0_rgb(255_255_255_/_0.14)]"
-                    : "text-mist-dim hover:bg-white/[0.07] hover:text-mist",
+                    ? "bg-white/[0.08] text-bone font-semibold"
+                    : "text-ash hover:bg-white/[0.04] hover:text-bone",
+                  collapsed && "justify-center px-0"
                 )}
               >
                 {active && (
-                  <span
+                  <motion.span
+                    layoutId="activeNavIndicator"
                     aria-hidden
-                    className="absolute top-2.5 bottom-2.5 left-0 w-[3px] rounded-full bg-seafoam"
+                    className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ion"
+                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
                   />
                 )}
-                <Icon className={cn("size-[18px]", active && "text-seafoam")} aria-hidden />
-                {label}
+                <Icon className={cn("size-4 shrink-0 transition-colors", active ? "text-ion" : "text-ash")} aria-hidden />
+                {!collapsed && <span className="truncate">{label}</span>}
               </Link>
             </li>
           );

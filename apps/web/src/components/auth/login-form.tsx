@@ -38,7 +38,6 @@ export function LoginForm() {
   async function onSubmit(values: LoginValues) {
     setFormError(null);
     try {
-      // On success the (auth) layout redirects to ?next= or the dashboard.
       await login(values.email, values.password);
     } catch (err) {
       setFormError(errorMessage(err));
@@ -46,14 +45,18 @@ export function LoginForm() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold sm:text-3xl">Welcome back</h1>
-        <p className="text-mist-dim">Log in to review drafts and keep your queue moving.</p>
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-4xl sm:text-5xl font-black uppercase tracking-tight text-bone">
+          Welcome back
+        </h1>
+        <p className="text-sm text-ash">
+          Sign in to review drafts and manage your customer queues.
+        </p>
       </header>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
+        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
           <FormField
             control={form.control}
             name="email"
@@ -61,7 +64,7 @@ export function LoginForm() {
               <FormItem>
                 <FormLabel>Email</FormLabel>
                 <FormControl>
-                  <Input type="email" autoComplete="email" {...field} />
+                  <Input type="email" placeholder="name@company.com" autoComplete="email" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -74,7 +77,7 @@ export function LoginForm() {
               <FormItem>
                 <FormLabel>Password</FormLabel>
                 <FormControl>
-                  <Input type="password" autoComplete="current-password" {...field} />
+                  <Input type="password" placeholder="••••••••" autoComplete="current-password" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -83,16 +86,16 @@ export function LoginForm() {
 
           <FormError>{formError}</FormError>
 
-          <Button type="submit" size="lg" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? "Logging in…" : "Log in"}
+          <Button type="submit" size="lg" className="mt-2 w-full" disabled={form.formState.isSubmitting}>
+            {form.formState.isSubmitting ? "Signing in…" : "Sign in"}
           </Button>
         </form>
       </Form>
 
-      <p className="text-mist-dim">
+      <p className="text-sm text-ash">
         New to ResolveAI?{" "}
-        <Link href="/signup" className="font-medium text-seafoam underline-offset-4 hover:underline">
-          Set up a workspace
+        <Link href="/signup" className="font-semibold text-ion underline-offset-4 hover:underline">
+          Create an account
         </Link>
       </p>
     </div>

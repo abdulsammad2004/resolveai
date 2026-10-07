@@ -1,19 +1,20 @@
 "use client";
 
-import { Menu, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
-
-// Stagger index for the one orchestrated entrance (see DESIGN.md, "Motion").
-const rise = (i: number) => ({ "--i": i }) as CSSProperties;
+import { CommandPalette } from "./command-palette";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   const closeNav = useCallback(() => {
@@ -22,53 +23,105 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-dvh lg:pl-[284px]">
+    <div
+      className={`min-h-dvh transition-[padding] duration-200 ${
+        sidebarCollapsed ? "lg:pl-[72px]" : "lg:pl-[240px]"
+      }`}
+    >
       <a
         href="#main"
-        className="glass-elevated fixed top-3 left-3 z-[60] -translate-y-24 rounded-card px-4 py-2.5 font-medium text-mist focus:translate-y-0"
+        className="fixed top-3 left-3 z-[60] -translate-y-24 rounded-[6px] bg-ion px-4 py-2 font-medium text-bone shadow-lg transition-transform focus:translate-y-0"
       >
         Skip to content
       </a>
 
-      {/* Floating sidebar, inset 12px from the screen edges. */}
+      {/* Desktop sidebar */}
       <aside
-        style={rise(0)}
-        className="glass rise-in fixed top-3 bottom-3 left-3 hidden w-[260px] flex-col gap-8 overflow-y-auto rounded-panel p-5 lg:flex"
+        className={`fixed top-0 bottom-0 left-0 hidden flex-col border-r border-line bg-ink p-3 transition-[width] duration-200 lg:flex ${
+          sidebarCollapsed ? "w-[72px]" : "w-[240px]"
+        }`}
       >
-        <div className="px-2 pt-1">
-          <Logo />
+        <div className="flex h-12 items-center justify-between px-2 pb-2">
+          {!sidebarCollapsed ? (
+            <Link href="/dashboard" className="transition-opacity hover:opacity-90">
+              <Logo />
+            </Link>
+          ) : (
+            <div className="mx-auto flex size-8 items-center justify-center rounded-[6px] bg-ion font-display text-lg font-black text-bone">
+              R
+            </div>
+          )}
         </div>
-        <SidebarNav />
+
+        <div className="mt-4 flex-1">
+          <SidebarNav collapsed={sidebarCollapsed} />
+        </div>
+
+        <div className="border-t border-line pt-3">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="flex h-9 w-full items-center justify-center rounded-[6px] text-ash hover:bg-white/[0.04] hover:text-bone transition-colors"
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="size-4" />
+            ) : (
+              <div className="flex w-full items-center gap-2 px-2 text-xs font-medium text-ash">
+                <PanelLeftClose className="size-4" />
+                <span>Collapse</span>
+              </div>
+            )}
+          </button>
+        </div>
       </aside>
 
-      <div className="flex min-h-dvh flex-col gap-3 p-3 lg:pl-0">
-        <header
-          style={rise(1)}
-          className="glass rise-in relative z-30 flex items-center gap-3 rounded-panel px-3 py-2.5 sm:px-4"
-        >
-          <Button
-            ref={menuButtonRef}
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            aria-label="Open navigation"
-            aria-expanded={navOpen}
-            aria-controls="mobile-nav"
-            onClick={() => setNavOpen(true)}
-          >
-            <Menu className="size-5" aria-hidden />
-          </Button>
-          <WorkspaceSwitcher />
-          <div className="ml-auto">
+      {/* Main Content & Topbar */}
+      <div className="flex min-h-dvh flex-col">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-ink/90 px-4 backdrop-blur-md sm:px-6">
+          <div className="flex items-center gap-3">
+            <Button
+              ref={menuButtonRef}
+              variant="ghost"
+              size="icon"
+              className="lg:hidden text-bone"
+              aria-label="Open navigation"
+              aria-expanded={navOpen}
+              aria-controls="mobile-nav"
+              onClick={() => setNavOpen(true)}
+            >
+              <Menu className="size-5" aria-hidden />
+            </Button>
+            <WorkspaceSwitcher />
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Quick command palette trigger */}
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="flex h-9 items-center gap-2 rounded-[6px] border border-line bg-carbon px-3 text-xs text-ash hover:border-white/20 hover:text-bone transition-colors"
+            >
+              <Search className="size-3.5" />
+              <span className="hidden sm:inline">Search...</span>
+              <kbd className="hidden font-mono text-[10px] text-ash sm:inline bg-carbon-elevated px-1.5 py-0.5 rounded border border-line">
+                ⌘K
+              </kbd>
+            </button>
+
             <UserMenu />
           </div>
         </header>
 
-        <main id="main" tabIndex={-1} style={rise(2)} className="rise-in flex-1 outline-none">
+        <main id="main" tabIndex={-1} className="flex-1 bg-ink p-4 outline-none sm:p-6 lg:p-8">
           {children}
         </main>
       </div>
 
+      {/* Command Palette Modal */}
+      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+
+      {/* Mobile drawer */}
       {navOpen && <MobileNav onClose={closeNav} />}
     </div>
   );
@@ -94,7 +147,7 @@ function MobileNav({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 lg:hidden">
       <div
-        className="absolute inset-0 bg-deep/60 duration-150 animate-in fade-in-0"
+        className="fixed inset-0 bg-ink/80 backdrop-blur-sm duration-150 animate-in fade-in-0"
         aria-hidden
         onClick={onClose}
       />
@@ -104,15 +157,17 @@ function MobileNav({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Navigation"
-        className="glass-elevated slide-over absolute top-3 bottom-3 left-3 flex w-[min(280px,calc(100vw-24px))] flex-col gap-8 overflow-y-auto rounded-panel p-5"
+        className="fixed top-0 bottom-0 left-0 flex w-[260px] flex-col border-r border-line bg-ink p-4 shadow-2xl animate-in slide-in-from-left duration-200"
       >
-        <div className="flex items-center justify-between pl-2">
+        <div className="flex items-center justify-between pb-4 border-b border-line">
           <Logo />
           <Button variant="ghost" size="icon" aria-label="Close navigation" onClick={onClose}>
-            <X className="size-5" aria-hidden />
+            <X className="size-5 text-bone" aria-hidden />
           </Button>
         </div>
-        <SidebarNav onNavigate={onClose} />
+        <div className="mt-4 flex-1">
+          <SidebarNav onNavigate={onClose} />
+        </div>
       </div>
     </div>
   );

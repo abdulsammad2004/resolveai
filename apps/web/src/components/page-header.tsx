@@ -10,9 +10,11 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 px-2 pt-4 pb-2 sm:px-4 sm:pt-6">
-      <h1 className="text-2xl font-semibold sm:text-3xl">{title}</h1>
-      {description && <div className="max-w-2xl text-lg text-mist-dim">{description}</div>}
+    <div className="flex flex-col gap-2 px-1 pt-2 pb-1 sm:px-2 sm:pt-4">
+      <h1 className="font-display text-4xl font-bold tracking-tight text-bone sm:text-5xl">
+        {title}
+      </h1>
+      {description && <div className="max-w-2xl text-base text-ash">{description}</div>}
       {children}
     </div>
   );
