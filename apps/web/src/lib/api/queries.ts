@@ -1,27 +1,32 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Client } from "openapi-fetch";
 
 import { useAuth } from "@/lib/auth/auth-provider";
-import { getAccessToken, patchSessionWorkspace } from "@/lib/auth/session-store";
+import { patchSessionWorkspace } from "@/lib/auth/session-store";
 import { api } from "./client";
 import { toApiError } from "./errors";
-import type { components } from "./schema";
+import type { components, paths } from "./schema";
 
 export type WorkspaceWithRole = components["schemas"]["WorkspaceWithRole"];
 export type WorkspaceSettings = components["schemas"]["WorkspaceSettingsOut"];
 export type WorkspaceSettingsUpdate = components["schemas"]["WorkspaceSettingsUpdate"];
 export type Member = components["schemas"]["MemberOut"];
 
+// /documents is not in schema.d.ts yet (run `npm run gen:api` against a current API to add it).
+// These mirror DocumentOut and DocumentPage in services/api/app/modules/knowledge/schemas.py.
 export interface DocumentItem {
   id: string;
-  workspace_id: string;
   title: string;
   filename: string;
   mime_type: string;
   size_bytes: number;
+  content_hash: string;
   status: "uploaded" | "processing" | "ready" | "failed";
+  error: string | null;
   chunk_count: number;
+  uploaded_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -30,6 +35,33 @@ export interface DocumentPage {
   items: DocumentItem[];
   next_cursor: string | null;
 }
+
+type DocumentPaths = {
+  "/api/v1/documents": {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    get: {
+      parameters: {
+        query?: { cursor?: string; limit?: number };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: { [name: string]: unknown };
+          content: { "application/json": DocumentPage };
+        };
+      };
+    };
+  };
+};
+
+// Same client instance (and auth middleware), typed with the missing path.
+const documentsApi = api as unknown as Client<paths & DocumentPaths>;
+
+const DOCUMENTS_PAGE_SIZE = 100;
+const DOCUMENTS_MAX_PAGES = 50;
 
 // Every key starts with the active workspace id so cached data never crosses tenants.
 export const queryKeys = {
@@ -111,35 +143,24 @@ export function useMembers() {
   });
 }
 
+/** Every document in the workspace, following next_cursor until the last page. */
 export function useDocuments() {
   const wid = useWorkspaceId();
   return useQuery({
     queryKey: queryKeys.documents(wid),
-    queryFn: async (): Promise<DocumentPage> => {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-      try {
-        const res = await fetch("/api/v1/documents", {
-          method: "GET",
-          headers,
-          credentials: "include",
+    queryFn: async (): Promise<DocumentItem[]> => {
+      const items: DocumentItem[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < DOCUMENTS_MAX_PAGES; page++) {
+        const { data, error, response } = await documentsApi.GET("/api/v1/documents", {
+          params: { query: { limit: DOCUMENTS_PAGE_SIZE, cursor } },
         });
-        if (!res.ok) {
-          if (res.status === 404) {
-            return { items: [], next_cursor: null };
-          }
-          return { items: [], next_cursor: null };
-        }
-        const data = (await res.json()) as DocumentPage;
-        return data;
-      } catch {
-        return { items: [], next_cursor: null };
+        if (!data) throw toApiError(error, response);
+        items.push(...data.items);
+        if (!data.next_cursor) break;
+        cursor = data.next_cursor;
       }
+      return items;
     },
   });
 }

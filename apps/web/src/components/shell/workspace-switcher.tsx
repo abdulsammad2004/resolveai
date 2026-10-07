@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { errorMessage } from "@/lib/api/errors";
 import { useCreateWorkspace, useWorkspaces } from "@/lib/api/queries";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -78,12 +79,15 @@ export function WorkspaceSwitcher() {
             }
           }}
         >
-          <DropdownMenuLabel className="text-xs uppercase tracking-wider text-ash">
+          <DropdownMenuLabel className="text-xs text-ash">
             Your workspaces
           </DropdownMenuLabel>
           <DropdownMenuGroup>
             {workspaces.isPending && (
-              <DropdownMenuItem disabled>Loading workspaces…</DropdownMenuItem>
+              <div aria-busy="true" aria-label="Loading workspaces" className="flex flex-col gap-2 px-3 py-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
             )}
             {workspaces.isError && (
               <DropdownMenuItem disabled>Couldn&apos;t load your workspaces.</DropdownMenuItem>

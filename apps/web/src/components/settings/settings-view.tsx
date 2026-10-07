@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { errorMessage } from "@/lib/api/errors";
 import {
@@ -44,11 +45,17 @@ export function SettingsView() {
       <PageHeader title="Settings" description="Manage your workspace, embeddable chat widget, and team access." />
 
       {settings.isPending && (
-        <GlassPanel>
-          <p className="text-ash" role="status">
-            Loading workspace settings…
-          </p>
-        </GlassPanel>
+        <>
+          <GlassPanel aria-busy="true" aria-label="Loading workspace settings" className="flex flex-col gap-5">
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-10 w-full max-w-xl" />
+            <Skeleton className="h-20 w-full max-w-xl" />
+          </GlassPanel>
+          <GlassPanel aria-busy="true" aria-label="Loading widget key" className="flex flex-col gap-4">
+            <Skeleton className="h-7 w-56" />
+            <Skeleton className="h-10 w-full max-w-2xl" />
+          </GlassPanel>
+        </>
       )}
       {settings.isError && (
         <GlassPanel>
@@ -114,8 +121,8 @@ function WorkspacePanel({ settings, canEdit }: { settings: WorkspaceSettings; ca
   return (
     <GlassPanel aria-labelledby="workspace-heading" className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 id="workspace-heading" className="font-display text-2xl font-bold uppercase tracking-tight text-bone">
-          Workspace Profile
+        <h2 id="workspace-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+          Workspace profile
         </h2>
         {!canEdit && (
           <p className="flex items-start gap-2 text-xs text-ash">
@@ -192,15 +199,15 @@ function WidgetKeyPanel({ widgetKey }: { widgetKey: string }) {
   return (
     <GlassPanel aria-labelledby="widget-heading" className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <h2 id="widget-heading" className="font-display text-2xl font-bold uppercase tracking-tight text-bone">
-          Chat Widget Public Key
+        <h2 id="widget-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+          Chat widget public key
         </h2>
         <p className="max-w-2xl text-sm text-ash">
           Embed this public key into your website client SDK to identify and scope conversations to this tenant.
         </p>
       </div>
       <div className="flex max-w-2xl flex-col gap-2">
-        <Label htmlFor="widget-key">Public Key</Label>
+        <Label htmlFor="widget-key">Public key</Label>
         <div className="flex flex-col gap-3 sm:flex-row">
           <Input
             id="widget-key"
@@ -226,16 +233,24 @@ function MembersPanel() {
   return (
     <GlassPanel aria-labelledby="members-heading" className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <h2 id="members-heading" className="font-display text-2xl font-bold uppercase tracking-tight text-bone">
-          Workspace Members
+        <h2 id="members-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+          Workspace members
         </h2>
         <p className="text-sm text-ash">Authorized team members with role-based workspace permissions.</p>
       </div>
 
       {members.isPending && (
-        <p className="text-ash text-sm" role="status">
-          Loading members…
-        </p>
+        <ul aria-busy="true" aria-label="Loading members" className="flex flex-col gap-4">
+          {[0, 1].map((i) => (
+            <li key={i} className="flex items-center gap-3">
+              <Skeleton className="size-9 rounded-full" />
+              <div className="flex flex-1 flex-col gap-2">
+                <Skeleton className="h-3.5 w-40" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
       {members.isError && <FormError>{errorMessage(members.error)}</FormError>}
       {members.data && (

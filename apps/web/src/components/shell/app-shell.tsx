@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import { Keyboard, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 
@@ -10,11 +10,25 @@ import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { CommandPalette } from "./command-palette";
+import { ShortcutsSheet, useAppShortcuts, useModKeyLabel } from "./shortcuts-sheet";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const modKey = useModKeyLabel();
+
+  const togglePalette = useCallback(() => {
+    setShortcutsOpen(false);
+    setCommandPaletteOpen((open) => !open);
+  }, []);
+  const toggleSheet = useCallback(() => {
+    setCommandPaletteOpen(false);
+    setShortcutsOpen((open) => !open);
+  }, []);
+  const closeSheet = useCallback(() => setShortcutsOpen(false), []);
+  useAppShortcuts({ togglePalette, toggleSheet });
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   const closeNav = useCallback(() => {
@@ -104,10 +118,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Search className="size-3.5" />
               <span className="hidden sm:inline">Search...</span>
-              <kbd className="hidden font-mono text-[10px] text-ash sm:inline bg-carbon-elevated px-1.5 py-0.5 rounded border border-line">
-                ⌘K
+              <kbd className="hidden text-[10px] text-ash sm:inline bg-carbon-elevated px-1.5 py-0.5 rounded border border-line">
+                {modKey} K
               </kbd>
             </button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden size-9 sm:inline-flex"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <Keyboard className="size-4" aria-hidden />
+            </Button>
 
             <UserMenu />
           </div>
@@ -120,6 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Command Palette Modal */}
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+      <ShortcutsSheet open={shortcutsOpen} onClose={closeSheet} />
 
       {/* Mobile drawer */}
       {navOpen && <MobileNav onClose={closeNav} />}

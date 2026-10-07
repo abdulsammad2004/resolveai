@@ -32,11 +32,11 @@ export function HowItWorks() {
     <section className="relative w-full border-t border-line bg-ink py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-16 flex flex-col items-start gap-4">
-          <span className="text-xs font-semibold uppercase tracking-widest text-ion">
-            Operational Workflow
+          <span className="text-sm font-semibold text-ion">
+            Operational workflow
           </span>
-          <h2 className="font-display text-5xl font-bold uppercase tracking-tight text-bone sm:text-7xl">
-            How It Works
+          <h2 className="font-display text-5xl font-bold tracking-tight text-bone sm:text-7xl">
+            How it works
           </h2>
           <p className="max-w-xl text-base text-ash sm:text-lg">
             A three-step loop combining autonomous neural retrieval with strict human oversight.
@@ -74,7 +74,7 @@ export function HowItWorks() {
                   </p>
                 </div>
 
-                <div className="mt-8 pt-4 border-t border-line/50 text-xs font-mono text-ash/60">
+                <div className="mt-8 pt-4 border-t border-line/50 text-xs text-ash/60">
                   Step {idx + 1} of 3
                 </div>
               </motion.div>

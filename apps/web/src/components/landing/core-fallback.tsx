@@ -1,6 +1,6 @@
 export function CoreFallback() {
   return (
-    <div className="relative flex size-full items-center justify-center" role="img" aria-label="ResolveAI Core Icon">
+    <div className="relative flex size-full items-center justify-center" role="img" aria-label="ResolveAI core icon">
       <svg
         viewBox="0 0 400 400"
         className="size-[280px] sm:size-[360px] lg:size-[420px] transition-transform duration-700 ease-out hover:scale-105"

@@ -17,7 +17,7 @@ export function Marquee() {
         {/* Render twice for seamless loop */}
         {[...items, ...items, ...items, ...items].map((item, index) => (
           <div key={index} className="flex items-center gap-8">
-            <span className="font-display text-xl sm:text-2xl font-bold tracking-tight uppercase text-bone">
+            <span className="font-display text-xl sm:text-2xl font-bold tracking-tight text-bone">
               {item}
             </span>
             <span className="size-2 rounded-full bg-ion" aria-hidden />

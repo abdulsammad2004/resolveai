@@ -58,7 +58,7 @@ export function SignupForm() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1.5">
-        <h1 className="font-display text-4xl sm:text-5xl font-black uppercase tracking-tight text-bone">
+        <h1 className="font-display text-4xl sm:text-5xl font-black tracking-tight text-bone">
           Create Workspace
         </h1>
         <p className="text-sm text-ash">

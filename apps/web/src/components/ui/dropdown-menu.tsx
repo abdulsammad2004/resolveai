@@ -78,7 +78,7 @@ function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       data-slot="dropdown-menu-label"
-      className={cn("px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-ash/80", className)}
+      className={cn("px-3 pt-2 pb-1 text-xs font-semibold text-ash/80", className)}
       {...props}
     />
   );

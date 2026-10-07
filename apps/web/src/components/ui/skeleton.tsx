@@ -1,14 +1,12 @@
-import { cn } from "cn";
+import { cn } from "@/lib/utils";
 
+// Placeholder block for loading data. The shimmer is dropped under reduced motion (globals.css).
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(
-        "relative overflow-hidden rounded-[6px] bg-white/[0.06] after:absolute after:inset-0 after:-translate-x-full after:animate-[shimmer_1.8s_infinite] after:bg-gradient-to-r after:from-transparent after:via-white/[0.08] after:to-transparent",
-        className
-      )}
+      aria-hidden
+      className={cn("skeleton relative overflow-hidden rounded-[6px] bg-white/[0.06]", className)}
       {...props}
     />
   );
 }
-

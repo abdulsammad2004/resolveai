@@ -19,7 +19,7 @@ export function HeroSection() {
         <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-8">
           {/* Headline and Copy */}
           <div className="flex flex-col gap-6 text-left">
-            <h1 className="font-display text-6xl font-black uppercase leading-[0.88] tracking-tight text-bone sm:text-8xl md:text-9xl lg:text-[110px] xl:text-[130px]">
+            <h1 className="font-display text-6xl font-black leading-[0.88] tracking-tight text-bone sm:text-8xl md:text-9xl lg:text-[110px] xl:text-[130px]">
               {headlineWords.map((word, index) => (
                 <span key={word} className="inline-block mr-3 sm:mr-5 overflow-hidden">
                   <motion.span

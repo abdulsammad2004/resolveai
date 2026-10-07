@@ -25,7 +25,7 @@ export function ClosingCta() {
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className="flex flex-col items-center gap-8"
         >
-          <h2 className="font-display text-6xl font-black uppercase tracking-tight text-bone sm:text-8xl md:text-9xl lg:text-[140px] leading-[0.85]">
+          <h2 className="font-display text-6xl font-black tracking-tight text-bone sm:text-8xl md:text-9xl lg:text-[140px] leading-[0.85]">
             Less inbox.<br />
             <span className="text-ion">More resolved.</span>
           </h2>

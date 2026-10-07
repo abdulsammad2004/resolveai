@@ -109,7 +109,7 @@ export function ScrollDemo() {
           <span className="text-xs font-semibold text-ion">
             Interactive architecture
           </span>
-          <h2 className="font-display text-4xl font-bold uppercase tracking-tight text-bone sm:text-6xl md:text-7xl">
+          <h2 className="font-display text-4xl font-bold tracking-tight text-bone sm:text-6xl md:text-7xl">
             Live resolution pipeline
           </h2>
           <p className="max-w-xl text-base text-ash sm:text-lg">
@@ -172,7 +172,7 @@ export function ScrollDemo() {
                 }`}
               >
                 <BookOpenText className="size-4 text-ion" />
-                <span>Shipping & Delivery Policy (v2.4)</span>
+                <span>Shipping and delivery policy</span>
               </div>
 
               <div
@@ -183,7 +183,7 @@ export function ScrollDemo() {
                 }`}
               >
                 <ShieldCheck className="size-4 text-resolved" />
-                <span>Order #4821 Fulfillment Event</span>
+                <span>Order fulfillment event</span>
               </div>
             </div>
           </div>
@@ -195,7 +195,7 @@ export function ScrollDemo() {
                 <Sparkles className="size-4" />
                 <span>AI drafted resolution</span>
               </div>
-              <span className="text-xs text-ash font-mono">Workspace: Acme Support</span>
+              <span className="text-xs text-ash">Workspace: Acme Support</span>
             </div>
 
             <p className="mt-4 min-h-[64px] text-sm sm:text-base text-bone font-normal leading-relaxed">
@@ -217,7 +217,7 @@ export function ScrollDemo() {
                 >
                   {isReduced || isApproved ? (
                     <>
-                      <Check className="size-4" /> Approved & dispatched
+                      <Check className="size-4" /> Approved and sent
                     </>
                   ) : (
                     "Approve and send"

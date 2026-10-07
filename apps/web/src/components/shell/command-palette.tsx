@@ -29,15 +29,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { workspace, switchWorkspace, logout } = useAuth();
   const workspaces = useWorkspaces();
 
-  // Keyboard shortcut listener
+  // The open shortcut (mod+K) lives in useAppShortcuts; Escape closes from here.
   React.useEffect(() => {
+    if (!open) return;
     const down = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        onOpenChange(!open);
-      }
+      if (e.key === "Escape") onOpenChange(false);
     };
-
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
   }, [open, onOpenChange]);
@@ -56,7 +53,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Command Palette"
+      aria-label="Command palette"
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4"
     >
       {/* Backdrop */}
@@ -71,7 +68,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <Command
           className="flex flex-col w-full text-bone"
           loop
-          label="Command Menu"
+          label="Command menu"
         >
           <div className="flex items-center border-b border-line px-3">
             <Search className="mr-2 size-4 shrink-0 text-ash" aria-hidden />
@@ -80,8 +77,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               placeholder="Type a command or search..."
               className="flex h-12 w-full rounded-md bg-transparent py-3 text-sm text-bone outline-none placeholder:text-ash disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border border-line bg-carbon px-1.5 font-mono text-[10px] font-medium text-ash">
-              ESC
+            <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border border-line bg-carbon px-1.5 text-[10px] font-medium text-ash">
+              Esc
             </kbd>
           </div>
 
@@ -92,7 +89,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
             <Command.Group
               heading="Navigation"
-              className="px-2 py-1.5 text-xs font-semibold text-ash uppercase tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-ash"
+              className="px-2 py-1.5 text-xs font-semibold text-ash [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-ash"
             >
               <Command.Item
                 value="dashboard overview"
@@ -109,7 +106,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 className="relative flex cursor-pointer select-none items-center rounded-[6px] px-2.5 py-2 text-sm text-bone outline-none aria-selected:bg-ion aria-selected:text-bone data-[selected=true]:bg-ion data-[selected=true]:text-bone transition-colors"
               >
                 <Inbox className="mr-2.5 size-4" />
-                <span>Inbox / Tickets</span>
+                <span>Inbox</span>
               </Command.Item>
 
               <Command.Item
@@ -152,7 +149,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {workspaces.data && workspaces.data.length > 0 && (
               <Command.Group
                 heading="Workspaces"
-                className="px-2 py-1.5 text-xs font-semibold text-ash uppercase tracking-wider mt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-ash"
+                className="px-2 py-1.5 text-xs font-semibold text-ash mt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-ash"
               >
                 {workspaces.data.map((ws) => (
                   <Command.Item
@@ -176,7 +173,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                       <span>{ws.name}</span>
                     </div>
                     {ws.id === workspace?.id && (
-                      <span className="text-xs font-mono opacity-80">(Active)</span>
+                      <span className="text-xs opacity-80">Active</span>
                     )}
                   </Command.Item>
                 ))}
@@ -185,7 +182,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
             <Command.Group
               heading="Actions"
-              className="px-2 py-1.5 text-xs font-semibold text-ash uppercase tracking-wider mt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-ash"
+              className="px-2 py-1.5 text-xs font-semibold text-ash mt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-ash"
             >
               <Command.Item
                 value="logout signout"
