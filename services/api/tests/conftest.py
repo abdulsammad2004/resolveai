@@ -15,17 +15,29 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings, get_settings
 
 # Point the app at the test database (runtime role) before any engine is created.
+# Tests never call OpenAI: force the deterministic fake embedder.
+os.environ["EMBEDDING_PROVIDER"] = "fake"
 _settings = Settings()
 os.environ["DATABASE_URL"] = _settings.test_database_url
 get_settings.cache_clear()
 
+from app.ai.embeddings import FakeEmbeddingClient
 from app.core.database import engine as app_engine
+from app.core.storage import LocalStorage, get_storage
 from app.main import create_app
+from app.workers.queue import get_job_queue
 
 API_DIR = Path(__file__).resolve().parents[1]
 TEST_OWNER_URL = _settings.test_migrations_database_url
 TEST_APP_URL = _settings.test_database_url
-TABLES = ("refresh_tokens", "memberships", "workspaces", "users")
+TABLES = (
+    "document_chunks",
+    "documents",
+    "refresh_tokens",
+    "memberships",
+    "workspaces",
+    "users",
+)
 PASSWORD = "correct-horse-battery"
 
 
@@ -63,9 +75,43 @@ async def clean_tables(owner_engine: AsyncEngine) -> AsyncGenerator[None, None]:
     await app_engine.dispose()
 
 
+class RecordingQueue:
+    """Stands in for Redis/arq: records enqueued jobs instead of sending them."""
+
+    def __init__(self) -> None:
+        self.jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
+        self.jobs.append((document_id, workspace_id))
+
+
 @pytest.fixture
-async def client() -> AsyncGenerator[AsyncClient, None]:
+def storage(tmp_path: Path) -> LocalStorage:
+    return LocalStorage(tmp_path / "storage")
+
+
+@pytest.fixture
+def job_queue() -> RecordingQueue:
+    return RecordingQueue()
+
+
+@pytest.fixture
+def worker_ctx(storage: LocalStorage) -> dict:
+    """arq-style context for calling worker jobs directly."""
+    return {
+        "storage": storage,
+        "embedder": FakeEmbeddingClient(_settings.embedding_dim),
+        "job_try": 1,
+    }
+
+
+@pytest.fixture
+async def client(
+    storage: LocalStorage, job_queue: RecordingQueue
+) -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[get_job_queue] = lambda: job_queue
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
@@ -136,3 +182,34 @@ async def add_member(
             ),
             {"id": uuid.uuid4(), "uid": user_id, "wid": workspace_id, "role": role},
         )
+
+
+MD_DOC = (
+    b"# Returns policy\n\nItems can be returned within 30 days of delivery.\n\n"
+    b"## Refunds\n\nRefunds go back to the original payment method within 5 business days.\n\n"
+    b"## Exchanges\n\nExchanges are free for items of the same price.\n"
+)
+
+
+async def upload_file(
+    client: AsyncClient,
+    headers: dict[str, str],
+    filename: str = "returns.md",
+    content: bytes = MD_DOC,
+) -> Response:
+    return await client.post(
+        "/api/v1/documents",
+        files={"file": (filename, content, "application/octet-stream")},
+        headers=headers,
+    )
+
+
+async def as_agent_in(
+    client: AsyncClient, owner_engine: AsyncEngine, agent: SignedUp, workspace_id: uuid.UUID
+) -> dict[str, str]:
+    """Make `agent` an agent in `workspace_id` and return headers for that workspace."""
+    await add_member(owner_engine, agent.user_id, workspace_id, "agent")
+    resp = await client.post(f"/api/v1/workspaces/{workspace_id}/switch", headers=agent.headers)
+    assert resp.status_code == 200, resp.text
+    client.cookies.clear()
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}

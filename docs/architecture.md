@@ -170,7 +170,7 @@ Mechanics:
 **Why**
 
 - Application-level `WHERE workspace_id = ...` depends on every developer (and every AI agent) remembering it, every time. RLS makes the database the last line of defense, so a forgotten filter returns zero rows instead of leaking data.
-- Vector search also has to be tenant-scoped, and RLS covers the `chunks` table too.
+- Vector search also has to be tenant-scoped, and RLS covers the `document_chunks` table too.
 - `SET LOCAL` is scoped to the transaction, so a pooled connection can't carry one tenant's context into the next request.
 
 **Rejected**
@@ -191,7 +191,7 @@ Mechanics:
 | `refresh_tokens` | Refresh sessions (global, no RLS) | id, user_id, workspace_id, token_hash, family_id, expires_at, revoked_at, replaced_by_id |
 | `memberships` | User ↔ workspace with role | workspace_id, user_id, role (`owner`, `admin`, `agent`) |
 | `documents` | Uploaded knowledge sources | workspace_id, title, source_type, status, content_hash |
-| `chunks` | Text pieces + embeddings | workspace_id, document_id, content, embedding (vector), position, metadata |
+| `document_chunks` | Text pieces + embeddings | workspace_id, document_id, content, embedding (vector), position, metadata |
 | `tickets` | Support requests | workspace_id, status, category, priority, intent, assigned_to |
 | `conversations` | Thread per ticket/customer | workspace_id, ticket_id, channel |
 | `messages` | Individual messages | workspace_id, conversation_id, sender_type (`customer`, `agent`, `ai`), body |
@@ -273,10 +273,10 @@ Main resources: `/tickets`, `/tickets/{id}/messages`, `/tickets/{id}/drafts`, `/
 
 **Ingestion (async, in workers)**
 
-1. Upload → store the original file in object storage (a GCS bucket; local disk in dev) and create a `documents` row with status `pending`.
-2. Worker parses text (PDF, DOCX, MD, TXT).
+1. Upload → store the original file in object storage (a GCS bucket; local disk in dev) and create a `documents` row with status `uploaded`.
+2. Worker sets the status to `processing` and parses text (PDF, DOCX, MD, TXT).
 3. Chunk into about 500 to 800 tokens with 10 to 15% overlap, preserving headings as metadata.
-4. Embed in batches and insert into `chunks` with `workspace_id`.
+4. Embed in batches and insert into `document_chunks` with `workspace_id`.
 5. Mark the document `ready` or `failed` (with a reason).
 
 **Query flow**
