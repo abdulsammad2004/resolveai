@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
 
 import { KnowledgeView } from "@/components/knowledge/knowledge-view";
-import { PageHeader } from "@/components/page-header";
 
 export const metadata: Metadata = { title: "Knowledge" };
 
+// The view renders its own header: the ready-document count comes from live data.
 export default function KnowledgePage() {
-  return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title="Knowledge" />
-      <KnowledgeView />
-    </div>
-  );
+  return <KnowledgeView />;
 }

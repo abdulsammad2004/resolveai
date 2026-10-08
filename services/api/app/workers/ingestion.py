@@ -15,6 +15,7 @@ from arq import Retry
 from sqlalchemy import delete, insert, select
 
 from app.ai.embeddings import EmbeddingClient, get_embedding_client
+from app.ai.usage import LLMPurpose, MeteredEmbeddingClient
 from app.core.deps import tenant_session
 from app.core.storage import Storage, StorageError, get_storage
 from app.modules.knowledge.chunking import chunk_sections
@@ -101,7 +102,11 @@ async def _ingest(
     if not chunks:
         raise PermanentIngestError("The document contains no extractable text.")
 
-    embeddings = await embedder.embed([c.content for c in chunks])
+    # Every provider call is recorded in llm_calls (tokens and cost, never text).
+    metered = MeteredEmbeddingClient(
+        embedder, workspace_id=ws_id, purpose=LLMPurpose.EMBED_DOCUMENT
+    )
+    embeddings = await metered.embed([c.content for c in chunks])
     if len(embeddings) != len(chunks):
         raise RuntimeError("Embedding count does not match chunk count")
 

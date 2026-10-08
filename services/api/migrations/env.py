@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.ai import usage as ai_usage_models  # noqa: F401  (llm_calls model)
 from app.core.config import get_settings
 from app.core.database import Base
 

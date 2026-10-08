@@ -220,3 +220,30 @@ async def test_workspace_b_cannot_reach_workspace_a_documents(
     # No context at all: nothing visible.
     async with app_role_engine.connect() as conn, conn.begin():
         assert await conn.scalar(text("SELECT count(*) FROM document_chunks")) == 0
+
+
+@pytest.mark.parametrize("title", ["", "   ", "string", " String "])
+async def test_empty_or_placeholder_title_defaults_to_filename_stem(
+    client: AsyncClient, title: str
+) -> None:
+    owner = await signup(client, "owner@example.com")
+    resp = await client.post(
+        "/api/v1/documents",
+        files={"file": ("Refund Policy.v2.md", MD_DOC, "application/octet-stream")},
+        data={"title": title},
+        headers=owner.headers,
+    )
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["title"] == "Refund Policy.v2"
+
+
+async def test_explicit_title_is_kept(client: AsyncClient) -> None:
+    owner = await signup(client, "owner@example.com")
+    resp = await client.post(
+        "/api/v1/documents",
+        files={"file": ("returns.md", MD_DOC, "application/octet-stream")},
+        data={"title": "  Returns & refunds  "},
+        headers=owner.headers,
+    )
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["title"] == "Returns & refunds"
