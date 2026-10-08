@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/lib/auth/auth-provider";
 import { clearSession, getAccessToken, patchSessionWorkspace } from "@/lib/auth/session-store";
@@ -18,6 +18,11 @@ export type DocumentStatus = components["schemas"]["DocumentStatus"];
 export type SearchResult = components["schemas"]["SearchResult"];
 export type SearchResponse = components["schemas"]["SearchResponse"];
 
+export type ConversationSummary = components["schemas"]["ConversationSummary"];
+export type ConversationDetail = components["schemas"]["ConversationDetail"];
+export type ConversationPage = components["schemas"]["ConversationPage"];
+export type ConversationStatus = ConversationSummary["status"];
+
 const DOCUMENTS_PAGE_SIZE = 100;
 const DOCUMENTS_MAX_PAGES = 50;
 
@@ -27,6 +32,10 @@ export const queryKeys = {
   settings: (wid: string) => [wid, "workspace-settings"] as const,
   members: (wid: string) => [wid, "members"] as const,
   documents: (wid: string) => [wid, "documents"] as const,
+  conversations: (wid: string) => [wid, "conversations"] as const,
+  conversationList: (wid: string, status: ConversationStatus | "all") =>
+    [wid, "conversations", "list", status] as const,
+  conversation: (wid: string, id: string) => [wid, "conversations", "detail", id] as const,
 };
 
 function useWorkspaceId(): string {
@@ -259,6 +268,84 @@ export function useKnowledgeSearch() {
       });
       if (!data) throw toApiError(error, response);
       return data;
+    },
+  });
+}
+
+const CONVERSATIONS_PAGE_SIZE = 25;
+const CONVERSATIONS_POLL_MS = 10_000;
+
+/** Inbox pages (newest activity first), polled so new widget chats show up on their own. */
+export function useConversations(status: ConversationStatus | "all") {
+  const wid = useWorkspaceId();
+  return useInfiniteQuery({
+    queryKey: queryKeys.conversationList(wid, status),
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }): Promise<ConversationPage> => {
+      const { data, error, response } = await api.GET("/api/v1/conversations", {
+        params: {
+          query: {
+            limit: CONVERSATIONS_PAGE_SIZE,
+            cursor: pageParam,
+            status: status === "all" ? undefined : status,
+          },
+        },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: CONVERSATIONS_POLL_MS,
+  });
+}
+
+/** Counts per status (from a one-item page); used by the dashboard tile. */
+export function useConversationCounts() {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: [...queryKeys.conversations(wid), "counts"] as const,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/v1/conversations", {
+        params: { query: { limit: 1 } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data.counts;
+    },
+    refetchInterval: CONVERSATIONS_POLL_MS,
+  });
+}
+
+export function useConversation(id: string | null) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.conversation(wid, id ?? "none"),
+    enabled: id !== null,
+    queryFn: async (): Promise<ConversationDetail> => {
+      const { data, error, response } = await api.GET("/api/v1/conversations/{conversation_id}", {
+        params: { path: { conversation_id: id ?? "" } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    refetchInterval: CONVERSATIONS_POLL_MS,
+  });
+}
+
+export function useUpdateConversationStatus() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: ConversationStatus }) => {
+      const { data, error, response } = await api.PATCH("/api/v1/conversations/{conversation_id}", {
+        params: { path: { conversation_id: id } },
+        body: { status },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData(queryKeys.conversation(wid, detail.id), detail);
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations(wid) });
     },
   });
 }
