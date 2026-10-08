@@ -17,7 +17,8 @@ export type FinalAnswer = {
   id: string;
   content: string;
   citations: Citation[];
-  grounded: boolean;
+  grounded: boolean | null;
+  route: NonNullable<WidgetMessage["route"]>;
 };
 
 export class WidgetError extends Error {

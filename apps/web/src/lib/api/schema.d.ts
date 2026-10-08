@@ -304,6 +304,85 @@ export interface paths {
         patch: operations["update_conversation_api_v1_conversations__conversation_id__patch"];
         trace?: never;
     };
+    "/api/v1/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tickets
+         * @description Urgent first, then newest. `counts` cover the whole workspace, ignoring filters.
+         */
+        get: operations["list_tickets_api_v1_tickets_get"];
+        put?: never;
+        /**
+         * Create Ticket
+         * @description A manual ticket, classified like a widget message (intent and priority).
+         */
+        post: operations["create_ticket_api_v1_tickets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ticket */
+        get: operations["get_ticket_api_v1_tickets__ticket_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Ticket */
+        patch: operations["update_ticket_api_v1_tickets__ticket_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/mock-orders/seed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Orders
+         * @description Insert ~10 sample orders into this workspace. Safe to call repeatedly.
+         */
+        post: operations["seed_orders_api_v1_mock_orders_seed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mock-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Orders */
+        get: operations["list_orders_api_v1_mock_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/widget/session": {
         parameters: {
             query?: never;
@@ -423,6 +502,29 @@ export interface components {
              */
             snippet: string;
         };
+        /** ClassificationOut */
+        ClassificationOut: {
+            /** Intent */
+            intent: string;
+            /** Intent Probs */
+            intent_probs: {
+                [key: string]: number;
+            };
+            /** Priority */
+            priority: string;
+            /** Priority Probs */
+            priority_probs: {
+                [key: string]: number;
+            };
+            /** Needs Human Prob */
+            needs_human_prob: number;
+            /** Confidence */
+            confidence: number;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+        };
         /** ContactOut */
         ContactOut: {
             /**
@@ -460,6 +562,8 @@ export interface components {
             status: "open" | "needs_human" | "closed";
             /** Channel */
             channel: string;
+            /** Ticket Id */
+            ticket_id?: string | null;
             contact: components["schemas"]["ContactOut"];
             /** Last Message At */
             last_message_at: string | null;
@@ -618,6 +722,18 @@ export interface components {
             full_name: string;
             role: components["schemas"]["Role"];
         };
+        /** MemberRef */
+        MemberRef: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Full Name */
+            full_name: string;
+            /** Email */
+            email: string;
+        };
         /** MessageOut */
         MessageOut: {
             /**
@@ -636,6 +752,12 @@ export interface components {
             citations: components["schemas"]["Citation"][];
             /** Grounded */
             grounded: boolean | null;
+            /** Route */
+            route?: ("answer" | "fallback" | "small_talk" | "handoff") | null;
+            /** Classification */
+            classification?: {
+                [key: string]: unknown;
+            } | null;
             /** Prompt Version */
             prompt_version: string | null;
             /**
@@ -644,6 +766,44 @@ export interface components {
              */
             created_at: string;
             feedback?: components["schemas"]["FeedbackOut"] | null;
+        };
+        /** MockOrderOut */
+        MockOrderOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Order Number */
+            order_number: string;
+            /** Contact Email */
+            contact_email: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "processing" | "shipped" | "delivered" | "cancelled";
+            /** Carrier */
+            carrier: string | null;
+            /** Tracking Number */
+            tracking_number: string | null;
+            /** Eta */
+            eta: string | null;
+            /** Total */
+            total: string;
+            /** Items */
+            items: components["schemas"]["OrderItem"][];
+        };
+        /** OrderItem */
+        OrderItem: {
+            /** Sku */
+            sku: string;
+            /** Name */
+            name: string;
+            /** Quantity */
+            quantity: number;
+            /** Unit Price */
+            unit_price: string;
         };
         /**
          * Role
@@ -685,6 +845,13 @@ export interface components {
             /** Score */
             score: number;
         };
+        /** SeedResult */
+        SeedResult: {
+            /** Inserted */
+            inserted: number;
+            /** Orders */
+            orders: components["schemas"]["MockOrderOut"][];
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -698,6 +865,148 @@ export interface components {
             full_name: string;
             /** Workspace Name */
             workspace_name: string;
+        };
+        /** TicketCounts */
+        TicketCounts: {
+            /** New */
+            new: number;
+            /** Triaged */
+            triaged: number;
+            /** Awaiting Review */
+            awaiting_review: number;
+            /** Replied */
+            replied: number;
+            /** Resolved */
+            resolved: number;
+            /** Open */
+            open: number;
+            /** Urgent Open */
+            urgent_open: number;
+        };
+        /** TicketCreate */
+        TicketCreate: {
+            /** Subject */
+            subject: string;
+            /** Description */
+            description: string;
+            /** Contact Email */
+            contact_email?: string | null;
+        };
+        /** TicketDetail */
+        TicketDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Subject */
+            subject: string;
+            /**
+             * Intent
+             * @enum {string}
+             */
+            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "complaint" | "account_change" | "other";
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "normal" | "high" | "urgent";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "triaged" | "awaiting_review" | "replied" | "resolved";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "widget" | "manual";
+            /** Confidence */
+            confidence: number | null;
+            contact: components["schemas"]["ContactOut"] | null;
+            assignee: components["schemas"]["MemberRef"] | null;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Description */
+            description: string | null;
+            classification: components["schemas"]["ClassificationOut"] | null;
+            conversation: components["schemas"]["ConversationDetail"] | null;
+        };
+        /** TicketPage */
+        TicketPage: {
+            /** Items */
+            items: components["schemas"]["TicketSummary"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            counts: components["schemas"]["TicketCounts"];
+        };
+        /** TicketSummary */
+        TicketSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Subject */
+            subject: string;
+            /**
+             * Intent
+             * @enum {string}
+             */
+            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "complaint" | "account_change" | "other";
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "normal" | "high" | "urgent";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "triaged" | "awaiting_review" | "replied" | "resolved";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "widget" | "manual";
+            /** Confidence */
+            confidence: number | null;
+            contact: components["schemas"]["ContactOut"] | null;
+            assignee: components["schemas"]["MemberRef"] | null;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TicketUpdate
+         * @description Only the fields sent are changed; `assignee_id: null` unassigns.
+         */
+        TicketUpdate: {
+            /** Status */
+            status?: ("new" | "triaged" | "awaiting_review" | "replied" | "resolved") | null;
+            /** Priority */
+            priority?: ("low" | "normal" | "high" | "urgent") | null;
+            /** Assignee Id */
+            assignee_id?: string | null;
         };
         /** UserOut */
         UserOut: {
@@ -772,6 +1081,8 @@ export interface components {
             citations: components["schemas"]["Citation"][];
             /** Grounded */
             grounded: boolean | null;
+            /** Route */
+            route?: ("answer" | "fallback" | "small_talk" | "handoff") | null;
             /**
              * Created At
              * Format: date-time
@@ -1511,6 +1822,181 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tickets_api_v1_tickets_get: {
+        parameters: {
+            query?: {
+                status?: ("new" | "triaged" | "awaiting_review" | "replied" | "resolved") | null;
+                priority?: ("low" | "normal" | "high" | "urgent") | null;
+                intent?: ("greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "complaint" | "account_change" | "other") | null;
+                assignee?: "me" | "unassigned" | "any";
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_ticket_api_v1_tickets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TicketCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ticket_api_v1_tickets__ticket_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ticket_api_v1_tickets__ticket_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TicketUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seed_orders_api_v1_mock_orders_seed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeedResult"];
+                };
+            };
+        };
+    };
+    list_orders_api_v1_mock_orders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MockOrderOut"][];
                 };
             };
         };

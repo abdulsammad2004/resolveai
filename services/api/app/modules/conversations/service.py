@@ -257,10 +257,13 @@ async def add_assistant_message(
     conversation_id: uuid.UUID,
     content: str,
     citations: list[dict[str, Any]],
-    grounded: bool,
-    llm_call_id: uuid.UUID | None,
-    prompt_version: str | None,
+    grounded: bool | None,
+    route: str,
+    escalate: bool,
+    llm_call_id: uuid.UUID | None = None,
+    prompt_version: str | None = None,
 ) -> Message:
+    """Store an assistant reply. `escalate` hands the conversation to a person."""
     conversation = await get_conversation(db, workspace_id, conversation_id)
     message = Message(
         workspace_id=workspace_id,
@@ -269,16 +272,33 @@ async def add_assistant_message(
         content=content,
         citations=citations,
         grounded=grounded,
+        route=route,
         llm_call_id=llm_call_id,
         prompt_version=prompt_version,
         created_at=now(),
     )
     db.add(message)
     conversation.last_message_at = message.created_at
-    if not grounded:
+    if escalate:
         conversation.status = ConversationStatus.NEEDS_HUMAN
     await db.flush()
     return message
+
+
+async def set_classification(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    message_id: uuid.UUID,
+    classification: dict[str, Any] | None,
+) -> None:
+    message = (
+        await db.execute(
+            select(Message).where(Message.workspace_id == workspace_id, Message.id == message_id)
+        )
+    ).scalar_one_or_none()
+    if message is not None:
+        message.classification = classification
+        await db.flush()
 
 
 async def _feedback_by_message(
@@ -312,6 +332,7 @@ async def widget_conversation(
                 content=m.content,
                 citations=m.citations,  # type: ignore[arg-type]
                 grounded=m.grounded,
+                route=m.route,  # type: ignore[arg-type]
                 created_at=m.created_at,
                 rating=feedback[m.id].rating if m.id in feedback else None,  # type: ignore[arg-type]
             )
@@ -484,6 +505,7 @@ async def conversation_detail(
         id=conversation.id,
         status=conversation.status,  # type: ignore[arg-type]
         channel=conversation.channel,
+        ticket_id=conversation.ticket_id,
         contact=ContactOut.model_validate(contact),
         last_message_at=conversation.last_message_at,
         created_at=conversation.created_at,
@@ -494,6 +516,8 @@ async def conversation_detail(
                 content=m.content,
                 citations=m.citations,  # type: ignore[arg-type]
                 grounded=m.grounded,
+                route=m.route,  # type: ignore[arg-type]
+                classification=m.classification,
                 prompt_version=m.prompt_version,
                 created_at=m.created_at,
                 feedback=(

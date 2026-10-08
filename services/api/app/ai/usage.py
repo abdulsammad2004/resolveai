@@ -81,6 +81,12 @@ def chat_cost(input_tokens: int, output_tokens: int) -> Decimal:
     return cost.quantize(COST_QUANTUM)
 
 
+def clef_cost(input_tokens: int) -> Decimal:
+    """Clef bills input tokens only."""
+    price = get_settings().clef_flash_price_per_mtok
+    return (Decimal(input_tokens) * price / MTOK).quantize(COST_QUANTUM)
+
+
 def _error_type(exc: BaseException) -> str:
     # Our client errors wrap the provider exception; the cause is the useful type.
     return type(exc.__cause__ or exc).__name__[:100]

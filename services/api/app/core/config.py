@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     # with the fallback message instead of calling the LLM.
     widget_daily_token_budget: int = Field(default=200_000, ge=0)
 
+    # Message classification. `clef` uses Cloudflare Workers AI (@cf/cloudflare/clef-flash) and
+    # falls back to the chat LLM when Cloudflare isn't configured or the call fails.
+    decision_provider: Literal["clef", "llm", "fake"] = "clef"
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: SecretStr | None = None
+    clef_flash_price_per_mtok: Decimal = Decimal("0.09")
+    # Below this intent confidence a message is answered from the knowledge base.
+    classify_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    # At or above this needs-human probability a message becomes a ticket.
+    needs_human_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:

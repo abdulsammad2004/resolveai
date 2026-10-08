@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
+from app.ai.decisions import DecisionClient, get_decision_client
 from app.ai.embeddings import EmbeddingClient, get_embedding_client
 from app.ai.llm import LLMConfigError, UsageReportingLLMClient, get_llm_client
 from app.core.config import get_settings
@@ -60,6 +61,7 @@ def get_widget_embedder() -> EmbeddingClient:
 Limiter = Annotated[WidgetLimiter, Depends(get_widget_limiter)]
 ChatLLM = Annotated[UsageReportingLLMClient, Depends(get_chat_llm)]
 Embedder = Annotated[EmbeddingClient, Depends(get_widget_embedder)]
+Decider = Annotated[DecisionClient, Depends(get_decision_client)]
 
 
 @router.post("/session", response_model=WidgetSessionResponse)
@@ -117,6 +119,7 @@ async def send_message(
     limiter: Limiter,
     llm: ChatLLM,
     embedder: Embedder,
+    decider: Decider,
 ) -> StreamingResponse:
     settings = get_settings()
     # Behind the web app's proxy, uvicorn's --proxy-headers resolves the client address.
@@ -143,16 +146,20 @@ async def send_message(
         conversation = await service.get_conversation(
             db, widget.workspace_id, widget.conversation_id
         )
-        _, history = await service.add_customer_message(db, conversation, content)
+        customer_message, history = await service.add_customer_message(
+            db, conversation, content
+        )
         history_items = [HistoryItem(role=m.role, content=m.content) for m in history]
 
     req = AnswerRequest(
         workspace_id=widget.workspace_id,
         conversation_id=widget.conversation_id,
+        customer_message_id=customer_message.id,
         question=content,
         history=history_items,
         llm=llm,
         embedder=embedder,
+        decider=decider,
         limiter=limiter,
         request_id=get_request_id() or None,
     )

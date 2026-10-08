@@ -23,6 +23,7 @@ dependencies = [
     "email-validator",
     "arq",
     "openai",
+    "httpx",
     "tiktoken",
     "pypdf",
     "python-docx",
@@ -33,7 +34,6 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-asyncio",
-    "httpx",
     "ruff",
 ]
 

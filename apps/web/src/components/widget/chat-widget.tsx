@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Hourglass, RotateCcw, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { ArrowUp, Hourglass, RotateCcw, ThumbsDown, ThumbsUp, UsersRound, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -266,6 +266,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
           content: answer.content,
           citations: answer.citations,
           grounded: answer.grounded,
+          route: answer.route,
           created_at: new Date().toISOString(),
           rating: null,
         },
@@ -436,6 +437,12 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
                 >
                   <div className="rounded-[12px] rounded-tl-[4px] border border-line bg-carbon px-3.5 py-2.5">
                     <CitedAnswer content={m.content} citations={m.citations} />
+                    {m.route === "handoff" && (
+                      <span className="mt-2 inline-flex items-center gap-1.5 rounded-[4px] border border-line bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-ash">
+                        <UsersRound className="size-3" aria-hidden />
+                        Passed to the team
+                      </span>
+                    )}
                   </div>
                   {m.role === "assistant" && (
                     <Feedback rating={m.rating ?? null} onRate={(r) => void rate(m.id, r)} />

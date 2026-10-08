@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 ConversationStatusLiteral = Literal["open", "needs_human", "closed"]
 RatingLiteral = Literal["up", "down"]
 RoleLiteral = Literal["customer", "assistant", "agent", "system"]
+RouteLiteral = Literal["answer", "fallback", "small_talk", "handoff"]
 
 
 class Citation(BaseModel):
@@ -54,6 +55,7 @@ class WidgetMessageOut(BaseModel):
     content: str
     citations: list[Citation]
     grounded: bool | None
+    route: RouteLiteral | None = None
     created_at: datetime
     rating: RatingLiteral | None = None
 
@@ -85,7 +87,8 @@ class FinalEvent(BaseModel):
     id: uuid.UUID
     content: str
     citations: list[Citation]
-    grounded: bool
+    grounded: bool | None
+    route: RouteLiteral
 
 
 # Dashboard ------------------------------------------------------------------------------
@@ -129,6 +132,9 @@ class MessageOut(BaseModel):
     content: str
     citations: list[Citation]
     grounded: bool | None
+    route: RouteLiteral | None = None
+    # Customer messages: how the message was classified (dashboard only, never the widget).
+    classification: dict[str, Any] | None = None
     prompt_version: str | None
     created_at: datetime
     feedback: FeedbackOut | None = None
@@ -138,6 +144,7 @@ class ConversationDetail(BaseModel):
     id: uuid.UUID
     status: ConversationStatusLiteral
     channel: str
+    ticket_id: uuid.UUID | None = None
     contact: ContactOut
     last_message_at: datetime | None
     created_at: datetime

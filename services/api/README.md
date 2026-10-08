@@ -72,6 +72,12 @@ Copy-Item .env.example .env
 | `WIDGET_CONVERSATION_RATE_PER_MINUTE` | `10` | Widget messages per conversation per minute; more get `429` |
 | `WIDGET_IP_RATE_PER_MINUTE` | `30` | Widget messages per client IP per minute; more get `429` |
 | `WIDGET_DAILY_TOKEN_BUDGET` | `200000` | Chat tokens (input + output) per workspace per UTC day. Above it the widget replies with the fallback message without calling the LLM |
+| `DECISION_PROVIDER` | `clef` | Message classifier: `clef` (Cloudflare Clef-flash, falling back to the chat LLM), `llm`, or `fake` (tests) |
+| `CLOUDFLARE_ACCOUNT_ID` | empty | Cloudflare account for Workers AI. Empty: classification uses the chat LLM |
+| `CLOUDFLARE_API_TOKEN` | empty | API token with Workers AI permission. Never logged |
+| `CLEF_FLASH_PRICE_PER_MTOK` | `0.09` | USD per million Clef input tokens (output isn't billed), for `llm_calls.cost_usd` |
+| `CLASSIFY_MIN_CONFIDENCE` | `0.6` | Below this intent confidence, a widget message is answered from the knowledge base |
+| `NEEDS_HUMAN_THRESHOLD` | `0.7` | At or above this needs-human probability, a widget message becomes a ticket |
 
 Prices are never hardcoded: set them from your provider's current price list. Every model call
 (document embedding, query embedding, and later chat) writes one row to `llm_calls` with tokens,
@@ -173,6 +179,51 @@ budget fails closed, so the widget answers with the fallback rather than spendin
 client IP is `request.client.host`, which uvicorn resolves from `X-Forwarded-For` only for
 trusted proxies (`--forwarded-allow-ips`, default `127.0.0.1`, which covers the local Next.js
 proxy).
+
+## Classification and routing
+
+Every widget message is classified before anything else (`app/ai/decisions.py`): intent,
+priority and the probability that a person is needed. Only the message and the two messages
+before it are sent. The default provider is Cloudflare's **Clef-flash** decision model
+(`@cf/cloudflare/clef-flash` over the Workers AI REST API, 5s timeout, one retry), which
+returns a probability for every option. If Cloudflare isn't configured or the call fails, the
+chat LLM answers the same questions with structured output (prompt `classify_v1`). Every call is
+metered in `llm_calls` with `purpose=classify` (`provider=cloudflare` for Clef, input tokens
+only), and the classification is stored on the customer message.
+
+Routing (`decide_route` in `app/modules/conversations/chat.py`):
+
+| Classification | Reply | Ticket |
+| --- | --- | --- |
+| `greeting` / `thanks` (confident, needs-human below threshold, priority not high/urgent) | Short fixed reply, no retrieval, no LLM | No |
+| `needs_human_prob >= NEEDS_HUMAN_THRESHOLD`, or a confident `order_status`, `refund_request`, `complaint`, `account_change`, or a greeting with a serious request | "Thanks — I've passed this to our team…" (no action is attempted) | Yes, conversation `needs_human` |
+| `knowledge_question`, low confidence, or classification unavailable | Grounded RAG answer | Only if the answer falls back |
+| Daily token budget used up | Fallback message, nothing classified | Yes |
+
+A conversation reuses its open ticket (its priority only ever rises); after the ticket is
+resolved, the next handoff opens a new one. Ticket subjects are the first 80 characters of the
+triggering message.
+
+Check your Cloudflare setup with `python scripts/smoke_classify.py`: it classifies five sample
+messages with the real Clef client and prints intent, priority, needs-human and confidence
+(nothing is written to the database).
+
+## Tickets
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/tickets` | Urgent first, then newest. Filters `status`, `priority`, `intent`, `assignee` (`me`, `unassigned`, `any`), cursor pagination, plus workspace-wide `counts` |
+| `GET /api/v1/tickets/{id}` | Ticket, classification and the conversation transcript |
+| `POST /api/v1/tickets` | Manual ticket `{subject, description, contact_email?}`, classified like a widget message |
+| `PATCH /api/v1/tickets/{id}` | `status`, `priority`, `assignee_id` (must be a member; `null` unassigns) |
+
+Any member may use them. Changes write nothing else yet; the audit log comes later.
+
+## Mock orders
+
+`POST /api/v1/mock-orders/seed` (owner/admin) inserts 10 sample orders into the current
+workspace; it is idempotent (existing order numbers are left alone). `GET /api/v1/mock-orders`
+lists them. They stand in for a real order API until order lookup tools arrive.
 
 ## Prompts
 

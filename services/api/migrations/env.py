@@ -11,11 +11,12 @@ from app.core.config import get_settings
 from app.core.database import Base
 
 # Import model modules here for Alembic autogenerate to discover:
-# from app.modules.tickets import models as tickets_models
 # from app.modules.approvals import models as approvals_models
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.conversations import models as conversations_models  # noqa: F401
 from app.modules.knowledge import models as knowledge_models  # noqa: F401
+from app.modules.orders import models as orders_models  # noqa: F401
+from app.modules.tickets import models as tickets_models  # noqa: F401
 from app.modules.workspaces import models as workspaces_models  # noqa: F401
 
 config = context.config

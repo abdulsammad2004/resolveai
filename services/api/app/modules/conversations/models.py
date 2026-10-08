@@ -37,6 +37,15 @@ class MessageRole(enum.StrEnum):
     SYSTEM = "system"
 
 
+class MessageRoute(enum.StrEnum):
+    """How an assistant reply was produced."""
+
+    ANSWER = "answer"  # grounded RAG answer
+    FALLBACK = "fallback"  # no sources / no valid citation / budget: handed to a person
+    SMALL_TALK = "small_talk"  # fixed reply to a greeting or thanks
+    HANDOFF = "handoff"  # routed straight to the team as a ticket
+
+
 class Rating(enum.StrEnum):
     UP = "up"
     DOWN = "down"
@@ -90,6 +99,13 @@ class Conversation(IdMixin, TimestampMixin, Base):
     last_message_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The conversation's current ticket, once one was opened. use_alter: tickets also
+    # reference conversations, so this foreign key is added after both tables exist.
+    ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tickets.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
 
 
 class Message(IdMixin, TimestampMixin, Base):
@@ -97,6 +113,9 @@ class Message(IdMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "role IN ('customer', 'assistant', 'agent', 'system')", name="role"
+        ),
+        CheckConstraint(
+            "route IN ('answer', 'fallback', 'small_talk', 'handoff')", name="route"
         ),
         Index(
             "ix_messages_workspace_id_conversation_id_created_at",
@@ -122,6 +141,10 @@ class Message(IdMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("llm_calls.id", ondelete="SET NULL"), nullable=True
     )
     prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Customer messages: the classification that routed them (see app.ai.decisions).
+    classification: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Assistant messages: how the reply was produced (MessageRoute).
+    route: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class Feedback(IdMixin, TimestampMixin, Base):
