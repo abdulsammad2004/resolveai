@@ -43,18 +43,23 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "closed", label: "Closed" },
 ];
 
+/** "refund_request" -> "refund request" */
+export function intentLabel(intent: string): string {
+  return intent.replaceAll("_", " ");
+}
+
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const fullFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-function shortTime(iso: string | null | undefined): string {
+export function shortTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
   const sameDay = date.toDateString() === new Date().toDateString();
   return sameDay ? timeFormat.format(date) : dayFormat.format(date);
 }
 
-function contactName(contact: ConversationSummary["contact"]): string {
+export function contactName(contact: ConversationSummary["contact"]): string {
   return contact.name || contact.email || `Visitor ${contact.anonymous_id.slice(0, 6)}`;
 }
 
@@ -304,7 +309,7 @@ function ConversationPanel({ id, onBack }: { id: string; onBack: () => void }) {
   );
 }
 
-function Transcript({ conversation }: { conversation: ConversationDetail }) {
+export function Transcript({ conversation }: { conversation: ConversationDetail }) {
   return (
     <ol className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5 sm:px-6" aria-label="Transcript">
       {conversation.messages.map((m) =>
@@ -315,6 +320,12 @@ function Transcript({ conversation }: { conversation: ConversationDetail }) {
             </p>
             <span className="text-[11px] text-ash">
               Customer · <time dateTime={m.created_at}>{shortTime(m.created_at)}</time>
+              {typeof m.classification?.intent === "string" && (
+                <span>
+                  {" "}
+                  · classified {intentLabel(m.classification.intent)}
+                </span>
+              )}
             </span>
           </li>
         ) : (
@@ -329,6 +340,8 @@ function Transcript({ conversation }: { conversation: ConversationDetail }) {
               </span>
               {m.grounded === true && <StatusChip tone="resolved">Grounded</StatusChip>}
               {m.grounded === false && <StatusChip tone="review">Fallback, no sources</StatusChip>}
+              {m.route === "handoff" && <StatusChip tone="review">Passed to the team</StatusChip>}
+              {m.route === "small_talk" && <StatusChip>Small talk</StatusChip>}
               {m.prompt_version && <span className="font-mono">{m.prompt_version}</span>}
             </div>
             {m.feedback && (

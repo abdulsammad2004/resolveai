@@ -9,6 +9,8 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.knowledge import router as knowledge_router
+from app.api.v1.mock_orders import router as mock_orders_router
+from app.api.v1.tickets import router as tickets_router
 from app.api.v1.widget import router as widget_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
@@ -53,6 +55,8 @@ def create_app() -> FastAPI:
     api_v1.include_router(documents_router)
     api_v1.include_router(knowledge_router)
     api_v1.include_router(conversations_router)
+    api_v1.include_router(tickets_router)
+    api_v1.include_router(mock_orders_router)
     api_v1.include_router(widget_router)
 
     app.include_router(health_router)

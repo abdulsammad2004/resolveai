@@ -20,6 +20,7 @@ from app.core.config import Settings, get_settings
 # Tests never call OpenAI: force the deterministic fake embedder and chat client.
 os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ["LLM_PROVIDER"] = "fake"
+os.environ["DECISION_PROVIDER"] = "fake"
 # Tests opt in to the dev localhost allowance explicitly, whatever the local .env says.
 os.environ["WIDGET_DEV_ALLOW_LOCALHOST"] = "false"
 _settings = Settings()
@@ -37,6 +38,8 @@ API_DIR = Path(__file__).resolve().parents[1]
 TEST_OWNER_URL = _settings.test_migrations_database_url
 TEST_APP_URL = _settings.test_database_url
 TABLES = (
+    "mock_orders",
+    "tickets",
     "feedback",
     "messages",
     "conversations",

@@ -30,8 +30,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { errorMessage } from "@/lib/api/errors";
 import {
   useMembers,
+  useMockOrders,
+  useSeedMockOrders,
   useUpdateWorkspaceSettings,
   useWorkspaceSettings,
+  type MockOrder,
   type WorkspaceSettings,
 } from "@/lib/api/queries";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -69,6 +72,7 @@ export function SettingsView() {
         <>
           <WorkspacePanel settings={settings.data} canEdit={canEdit} />
           <ChatWidgetPanel settings={settings.data} canEdit={canEdit} />
+          {canEdit && <DemoDataPanel />}
         </>
       )}
       <MembersPanel />
@@ -327,6 +331,105 @@ function WidgetPreview({ widgetKey, reloadKey }: { widgetKey: string; reloadKey:
         This is the live widget, so questions here become real conversations. It runs on this
         app&apos;s origin, which must be allowed (or enabled for local development).
       </p>
+    </div>
+  );
+}
+
+const money = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+const etaFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+const orderStatusTone = {
+  processing: "neutral",
+  shipped: "ion",
+  delivered: "resolved",
+  cancelled: "urgent",
+} as const;
+
+function DemoDataPanel() {
+  const orders = useMockOrders(true);
+  const seed = useSeedMockOrders();
+
+  async function load() {
+    try {
+      const result = await seed.mutateAsync();
+      toast.success(
+        result.inserted > 0
+          ? `Loaded ${result.inserted} sample orders.`
+          : "Sample orders are already loaded.",
+      );
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  }
+
+  return (
+    <GlassPanel aria-labelledby="demo-heading" className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex max-w-2xl flex-col gap-1">
+          <h2 id="demo-heading" className="font-display text-2xl font-bold tracking-tight text-bone">
+            Demo data
+          </h2>
+          <p className="text-sm text-ash">
+            Sample orders stand in for your order system, so you can try order questions in the
+            widget. Loading them again doesn&apos;t create duplicates.
+          </p>
+        </div>
+        <Button type="button" onClick={() => void load()} disabled={seed.isPending}>
+          {seed.isPending ? "Loading…" : "Load sample orders"}
+        </Button>
+      </div>
+
+      {orders.isPending && <Skeleton className="h-32 w-full" />}
+      {orders.isError && <FormError>{errorMessage(orders.error)}</FormError>}
+      {orders.data && orders.data.length === 0 && (
+        <p className="text-sm text-ash">No sample orders yet.</p>
+      )}
+      {orders.data && orders.data.length > 0 && <OrdersTable orders={orders.data} />}
+    </GlassPanel>
+  );
+}
+
+function OrdersTable({ orders }: { orders: MockOrder[] }) {
+  return (
+    <div className="overflow-x-auto rounded-[6px] border border-line">
+      <table className="w-full min-w-[40rem] text-left text-sm">
+        <caption className="sr-only">Sample orders</caption>
+        <thead className="border-b border-line bg-carbon-input text-xs text-ash">
+          <tr>
+            <th scope="col" className="px-3 py-2 font-medium">Order</th>
+            <th scope="col" className="px-3 py-2 font-medium">Customer</th>
+            <th scope="col" className="px-3 py-2 font-medium">Status</th>
+            <th scope="col" className="px-3 py-2 font-medium">Carrier</th>
+            <th scope="col" className="px-3 py-2 font-medium">ETA</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {orders.map((o) => (
+            <tr key={o.id}>
+              <td className="px-3 py-2 font-mono text-xs text-bone">{o.order_number}</td>
+              <td className="px-3 py-2 text-ash">{o.contact_email}</td>
+              <td className="px-3 py-2">
+                <StatusChip tone={orderStatusTone[o.status]}>
+                  {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                </StatusChip>
+              </td>
+              <td className="px-3 py-2 text-ash">
+                {o.carrier ?? "–"}
+                {o.tracking_number && (
+                  <span className="block font-mono text-[11px]">{o.tracking_number}</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-ash">
+                {o.eta ? etaFormat.format(new Date(`${o.eta}T00:00:00`)) : "–"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums text-bone">
+                {money.format(Number(o.total))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

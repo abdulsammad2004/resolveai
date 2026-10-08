@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatusChip, roleLabel, roleTone } from "@/components/status-chip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useConversationCounts, useDocuments } from "@/lib/api/queries";
+import { useConversationCounts, useDocuments, useTicketCounts } from "@/lib/api/queries";
 import { useAuth } from "@/lib/auth/auth-provider";
 
 function greeting(date = new Date()): string {
@@ -23,6 +23,7 @@ export function DashboardView() {
   // Same query (and cache entry) as the knowledge page and the setup ring: one fetch.
   const documents = useDocuments();
   const conversationCounts = useConversationCounts();
+  const ticketCounts = useTicketCounts();
   const readyCount = documents.data?.filter((d) => d.status === "ready").length;
   const settlingCount =
     documents.data?.filter((d) => d.status === "uploaded" || d.status === "processing").length ?? 0;
@@ -30,13 +31,21 @@ export function DashboardView() {
   if (!user || !workspace || !role) return null;
   const firstName = user.full_name.trim().split(/\s+/)[0];
 
-  // Tickets and approvals have no API yet, so their real count is 0.
+  const urgentOpen = ticketCounts.data?.urgent_open ?? 0;
+  // Approvals have no API yet, so their real count is 0.
   const stats = [
     {
       label: "Open tickets",
-      value: 0 as number | null,
-      loading: false,
-      hint: "Messages from your chat widget will be counted here once ticket intake is live.",
+      value: ticketCounts.data?.open ?? (ticketCounts.isError ? null : 0),
+      loading: ticketCounts.isPending,
+      error: "Couldn't load tickets. Refresh to try again.",
+      href: "/tickets",
+      linkLabel: "Open the inbox",
+      urgent: urgentOpen,
+      hint:
+        urgentOpen > 0
+          ? undefined
+          : "Requests that need a person. None of the open ones are urgent.",
     },
     {
       label: "Conversations needing a person",
@@ -44,6 +53,7 @@ export function DashboardView() {
       loading: conversationCounts.isPending,
       error: "Couldn't load conversations. Refresh to try again.",
       href: "/conversations",
+      linkLabel: "View conversations",
       hint: "Widget chats the assistant couldn't answer from your docs.",
     },
     {
@@ -92,6 +102,12 @@ export function DashboardView() {
               )}
             </CardHeader>
             <CardContent>
+              {stat.value !== null && stat.urgent !== undefined && stat.urgent > 0 && (
+                <p className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-urgent">
+                  <span className="size-1.5 rounded-full bg-urgent" aria-hidden />
+                  {stat.urgent} urgent
+                </p>
+              )}
               <p className="text-xs text-ash leading-relaxed">
                 {stat.value === null ? stat.error : stat.hint}
               </p>
@@ -100,7 +116,7 @@ export function DashboardView() {
                   href={stat.href}
                   className="mt-2 inline-block text-xs font-medium text-ion underline-offset-4 hover:underline"
                 >
-                  View conversations
+                  {stat.linkLabel}
                 </Link>
               )}
             </CardContent>

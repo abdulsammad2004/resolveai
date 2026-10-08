@@ -23,6 +23,17 @@ export type ConversationDetail = components["schemas"]["ConversationDetail"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
 export type ConversationStatus = ConversationSummary["status"];
 
+export type TicketSummary = components["schemas"]["TicketSummary"];
+export type TicketDetail = components["schemas"]["TicketDetail"];
+export type TicketPage = components["schemas"]["TicketPage"];
+export type TicketCreate = components["schemas"]["TicketCreate"];
+export type TicketUpdate = components["schemas"]["TicketUpdate"];
+export type TicketStatus = TicketSummary["status"];
+export type TicketPriority = TicketSummary["priority"];
+export type TicketIntent = TicketSummary["intent"];
+export type Classification = components["schemas"]["ClassificationOut"];
+export type MockOrder = components["schemas"]["MockOrderOut"];
+
 const DOCUMENTS_PAGE_SIZE = 100;
 const DOCUMENTS_MAX_PAGES = 50;
 
@@ -36,6 +47,16 @@ export const queryKeys = {
   conversationList: (wid: string, status: ConversationStatus | "all") =>
     [wid, "conversations", "list", status] as const,
   conversation: (wid: string, id: string) => [wid, "conversations", "detail", id] as const,
+  tickets: (wid: string) => [wid, "tickets"] as const,
+  ticketList: (wid: string, filters: TicketFilters) => [wid, "tickets", "list", filters] as const,
+  ticket: (wid: string, id: string) => [wid, "tickets", "detail", id] as const,
+  mockOrders: (wid: string) => [wid, "mock-orders"] as const,
+};
+
+export type TicketFilters = {
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  assignee: "me" | "any";
 };
 
 function useWorkspaceId(): string {
@@ -346,6 +367,130 @@ export function useUpdateConversationStatus() {
     onSuccess: (detail) => {
       queryClient.setQueryData(queryKeys.conversation(wid, detail.id), detail);
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations(wid) });
+    },
+  });
+}
+
+const TICKETS_PAGE_SIZE = 25;
+const TICKETS_POLL_MS = 10_000;
+
+/** Inbox pages: urgent first, then newest. Polled so widget handoffs appear on their own. */
+export function useTickets(filters: TicketFilters) {
+  const wid = useWorkspaceId();
+  return useInfiniteQuery({
+    queryKey: queryKeys.ticketList(wid, filters),
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }): Promise<TicketPage> => {
+      const { data, error, response } = await api.GET("/api/v1/tickets", {
+        params: {
+          query: {
+            limit: TICKETS_PAGE_SIZE,
+            cursor: pageParam,
+            status: filters.status,
+            priority: filters.priority,
+            assignee: filters.assignee,
+          },
+        },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: TICKETS_POLL_MS,
+  });
+}
+
+/** Workspace-wide ticket counts (from a one-item page); used by the dashboard. */
+export function useTicketCounts() {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: [...queryKeys.tickets(wid), "counts"] as const,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/v1/tickets", {
+        params: { query: { limit: 1 } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data.counts;
+    },
+    refetchInterval: TICKETS_POLL_MS,
+  });
+}
+
+export function useTicket(id: string | null) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.ticket(wid, id ?? "none"),
+    enabled: id !== null,
+    queryFn: async (): Promise<TicketDetail> => {
+      const { data, error, response } = await api.GET("/api/v1/tickets/{ticket_id}", {
+        params: { path: { ticket_id: id ?? "" } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    refetchInterval: TICKETS_POLL_MS,
+  });
+}
+
+export function useCreateTicket() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: TicketCreate) => {
+      const { data, error, response } = await api.POST("/api/v1/tickets", { body });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (ticket) => {
+      queryClient.setQueryData(queryKeys.ticket(wid, ticket.id), ticket);
+      queryClient.invalidateQueries({ queryKey: queryKeys.tickets(wid) });
+    },
+  });
+}
+
+export function useUpdateTicket() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, changes }: { id: string; changes: TicketUpdate }) => {
+      const { data, error, response } = await api.PATCH("/api/v1/tickets/{ticket_id}", {
+        params: { path: { ticket_id: id } },
+        body: changes,
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (ticket) => {
+      queryClient.setQueryData(queryKeys.ticket(wid, ticket.id), ticket);
+      queryClient.invalidateQueries({ queryKey: queryKeys.tickets(wid) });
+    },
+  });
+}
+
+export function useMockOrders(enabled: boolean) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.mockOrders(wid),
+    enabled,
+    queryFn: async (): Promise<MockOrder[]> => {
+      const { data, error, response } = await api.GET("/api/v1/mock-orders");
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+  });
+}
+
+export function useSeedMockOrders() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error, response } = await api.POST("/api/v1/mock-orders/seed");
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(queryKeys.mockOrders(wid), result.orders);
     },
   });
 }
