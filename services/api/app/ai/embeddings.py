@@ -7,6 +7,7 @@ import math
 import random
 import struct
 import time
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Protocol
 
@@ -14,6 +15,7 @@ import openai
 from openai import AsyncOpenAI
 
 from app.core.config import get_settings
+from app.modules.knowledge.chunking import count_tokens
 
 logger = logging.getLogger("app.ai.embeddings")
 
@@ -28,19 +30,42 @@ class EmbeddingError(Exception):
     """Embedding failed after retries, or the provider returned an invalid response."""
 
 
+@dataclass
+class EmbeddingResult:
+    vectors: list[list[float]]
+    input_tokens: int
+
+
 class EmbeddingClient(Protocol):
     dim: int
 
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
-def _is_retryable(exc: Exception) -> bool:
+class UsageReportingEmbeddingClient(EmbeddingClient, Protocol):
+    """A client that also reports token usage; app.ai.usage meters these."""
+
+    provider: str
+    model: str
+
+    async def embed_with_usage(self, texts: list[str]) -> EmbeddingResult: ...
+
+
+def is_retryable(exc: Exception) -> bool:
     if isinstance(exc, openai.APITimeoutError | openai.APIConnectionError | openai.RateLimitError):
         return True
     return isinstance(exc, openai.APIStatusError) and exc.status_code >= 500
 
 
+def backoff_delay(attempt: int) -> float:
+    """Jittered exponential backoff for retry number `attempt` (0-based)."""
+    delay = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2**attempt)
+    return random.uniform(delay / 2, delay)
+
+
 class OpenAIEmbeddingClient:
+    provider = "openai"
+
     def __init__(self, api_key: str, model: str, dim: int) -> None:
         # Retries are handled here so backoff and logging are under our control.
         self._client = AsyncOpenAI(api_key=api_key, timeout=REQUEST_TIMEOUT_S, max_retries=0)
@@ -48,12 +73,18 @@ class OpenAIEmbeddingClient:
         self.dim = dim
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for start in range(0, len(texts), BATCH_SIZE):
-            vectors.extend(await self._embed_batch(texts[start : start + BATCH_SIZE]))
-        return vectors
+        return (await self.embed_with_usage(texts)).vectors
 
-    async def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+    async def embed_with_usage(self, texts: list[str]) -> EmbeddingResult:
+        vectors: list[list[float]] = []
+        tokens = 0
+        for start in range(0, len(texts), BATCH_SIZE):
+            batch = await self._embed_batch(texts[start : start + BATCH_SIZE])
+            vectors.extend(batch.vectors)
+            tokens += batch.input_tokens
+        return EmbeddingResult(vectors=vectors, input_tokens=tokens)
+
+    async def _embed_batch(self, batch: list[str]) -> EmbeddingResult:
         attempt = 0
         while True:
             started = time.perf_counter()
@@ -62,15 +93,14 @@ class OpenAIEmbeddingClient:
                     model=self.model, input=batch, dimensions=self.dim
                 )
             except Exception as exc:
-                if not _is_retryable(exc) or attempt >= MAX_RETRIES:
+                if not is_retryable(exc) or attempt >= MAX_RETRIES:
                     logger.warning(
                         "Embedding request failed (error=%s, attempts=%d)",
                         type(exc).__name__,
                         attempt + 1,
                     )
                     raise EmbeddingError("Embedding provider request failed") from exc
-                delay = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2**attempt)
-                delay = random.uniform(delay / 2, delay)  # jitter
+                delay = backoff_delay(attempt)
                 attempt += 1
                 logger.info(
                     "Embedding request retry %d/%d in %.1fs (error=%s)",
@@ -89,18 +119,24 @@ class OpenAIEmbeddingClient:
             vectors = [list(d.embedding) for d in data]
             if any(len(v) != self.dim for v in vectors):
                 raise EmbeddingError(f"Embedding provider returned vectors not of size {self.dim}")
+            tokens = getattr(resp.usage, "total_tokens", None)
             logger.info(
                 "Embedded batch (model=%s, inputs=%d, tokens=%s, latency_ms=%.0f)",
                 self.model,
                 len(batch),
-                getattr(resp.usage, "total_tokens", None),
+                tokens,
                 latency_ms,
             )
-            return vectors
+            if tokens is None:
+                tokens = sum(count_tokens(t) for t in batch)
+            return EmbeddingResult(vectors=vectors, input_tokens=tokens)
 
 
 class FakeEmbeddingClient:
     """Deterministic unit vectors derived from a hash of the text. No network."""
+
+    provider = "fake"
+    model = "fake-embedding"
 
     def __init__(self, dim: int) -> None:
         self.dim = dim
@@ -120,9 +156,14 @@ class FakeEmbeddingClient:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [self._vector(t) for t in texts]
 
+    async def embed_with_usage(self, texts: list[str]) -> EmbeddingResult:
+        return EmbeddingResult(
+            vectors=await self.embed(texts), input_tokens=sum(count_tokens(t) for t in texts)
+        )
+
 
 @lru_cache
-def get_embedding_client() -> EmbeddingClient:
+def get_embedding_client() -> UsageReportingEmbeddingClient:
     settings = get_settings()
     if settings.embedding_provider == "fake":
         return FakeEmbeddingClient(settings.embedding_dim)

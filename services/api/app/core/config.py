@@ -1,8 +1,9 @@
 import json
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Literal
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-insecure-jwt-secret-change-me"
@@ -46,6 +47,20 @@ class Settings(BaseSettings):
     storage_backend: Literal["local"] = "local"
     local_storage_dir: str = "./storage"
     max_upload_mb: int = 20
+
+    # Chat model. Nothing calls it yet; LLM_CHAT_MODEL is checked when a call is made.
+    llm_provider: Literal["openai", "fake"] = "openai"
+    llm_chat_model: str = ""
+
+    # USD per million tokens, used to cost every row in llm_calls.
+    embedding_price_per_mtok: Decimal = Decimal("0.02")
+    llm_input_price_per_mtok: Decimal = Decimal(0)
+    llm_output_price_per_mtok: Decimal = Decimal(0)
+
+    # Retrieval: fetch top_k by cosine similarity, drop weak matches, keep the best few.
+    retrieval_top_k: int = Field(default=8, ge=1, le=50)
+    retrieval_min_score: float = Field(default=0.30, ge=-1.0, le=1.0)
+    retrieval_keep: int = Field(default=5, ge=1, le=50)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

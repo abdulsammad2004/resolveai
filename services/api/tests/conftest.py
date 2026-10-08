@@ -15,8 +15,9 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings, get_settings
 
 # Point the app at the test database (runtime role) before any engine is created.
-# Tests never call OpenAI: force the deterministic fake embedder.
+# Tests never call OpenAI: force the deterministic fake embedder and chat client.
 os.environ["EMBEDDING_PROVIDER"] = "fake"
+os.environ["LLM_PROVIDER"] = "fake"
 _settings = Settings()
 os.environ["DATABASE_URL"] = _settings.test_database_url
 get_settings.cache_clear()
@@ -31,6 +32,7 @@ API_DIR = Path(__file__).resolve().parents[1]
 TEST_OWNER_URL = _settings.test_migrations_database_url
 TEST_APP_URL = _settings.test_database_url
 TABLES = (
+    "llm_calls",
     "document_chunks",
     "documents",
     "refresh_tokens",

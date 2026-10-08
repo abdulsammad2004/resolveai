@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.health import router as health_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.documents import router as documents_router
+from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(auth_router)
     api_v1.include_router(workspaces_router)
     api_v1.include_router(documents_router)
+    api_v1.include_router(knowledge_router)
 
     app.include_router(health_router)
     app.include_router(api_v1)

@@ -59,6 +59,18 @@ Copy-Item .env.example .env
 | `STORAGE_BACKEND` | `local` | Where uploaded files are stored (`local` only for now) |
 | `LOCAL_STORAGE_DIR` | `./storage` | Upload directory for the local backend (gitignored) |
 | `MAX_UPLOAD_MB` | `20` | Upload size limit; larger files get `413` |
+| `LLM_PROVIDER` | `openai` | Chat model client: `openai`, or `fake` for deterministic offline replies (tests) |
+| `LLM_CHAT_MODEL` | empty | Chat model name. No default on purpose; calls fail with a clear config error until it is set |
+| `EMBEDDING_PRICE_PER_MTOK` | `0.02` | USD per million embedding tokens, for `llm_calls.cost_usd` |
+| `LLM_INPUT_PRICE_PER_MTOK` | `0` | USD per million chat input tokens |
+| `LLM_OUTPUT_PRICE_PER_MTOK` | `0` | USD per million chat output tokens |
+| `RETRIEVAL_TOP_K` | `8` | Nearest chunks fetched per knowledge search |
+| `RETRIEVAL_MIN_SCORE` | `0.30` | Cosine similarity below which a chunk is dropped (escalate instead of guessing) |
+| `RETRIEVAL_KEEP` | `5` | Chunks returned after the threshold |
+
+Prices are never hardcoded: set them from your provider's current price list. Every model call
+(document embedding, query embedding, and later chat) writes one row to `llm_calls` with tokens,
+cost, latency and status. Prompt and document text is never stored there.
 
 ### 5. Run Database Migrations
 ```powershell
@@ -94,7 +106,19 @@ Add `--watch app` to restart it on code changes. Run it from `services/api` so i
 ruff check .
 
 # Run test suite (needs Postgres running; migrates resolveai_test automatically).
-# Tests use the fake embedder and a fake job queue: no OpenAI key or Redis needed.
+# Tests use the fake embedder, fake chat client and a fake job queue: no OpenAI key or Redis needed.
 pytest
 ```
 
+## Knowledge search
+
+`POST /api/v1/knowledge/search` with `{"query": "..."}` (1 to 500 characters, any workspace
+member) embeds the query and runs a cosine search over chunks of `ready` documents in the
+caller's workspace, using the HNSW index under row-level security. Results below
+`RETRIEVAL_MIN_SCORE` are dropped; an empty `results` list is a normal `200`.
+
+## Prompts
+
+Prompts live as versioned files in `app/ai/prompts/` (`<name>_<version>.md`) and are loaded
+with `load_prompt(name, version)`. Never edit a released version in place: add `answer_v2.md`
+and switch callers to it, so `llm_calls.prompt_version` stays meaningful.

@@ -18,7 +18,11 @@ function greeting(date = new Date()): string {
 
 export function DashboardView() {
   const { user, workspace, role } = useAuth();
+  // Same query (and cache entry) as the knowledge page and the setup ring: one fetch.
   const documents = useDocuments();
+  const readyCount = documents.data?.filter((d) => d.status === "ready").length;
+  const settlingCount =
+    documents.data?.filter((d) => d.status === "uploaded" || d.status === "processing").length ?? 0;
 
   if (!user || !workspace || !role) return null;
   const firstName = user.full_name.trim().split(/\s+/)[0];
@@ -38,10 +42,13 @@ export function DashboardView() {
       hint: "Drafts and actions waiting for a person to approve them will be counted here.",
     },
     {
-      label: "Documents",
-      value: documents.data?.length ?? (documents.isError ? null : 0),
+      label: "Documents ready",
+      value: readyCount ?? (documents.isError ? null : 0),
       loading: documents.isPending,
-      hint: "Every help article and policy you upload, including ones still processing.",
+      hint:
+        settlingCount > 0
+          ? `${settlingCount} more ${settlingCount === 1 ? "is" : "are"} still processing.`
+          : "Help articles and policies the assistant can cite in its drafts.",
     },
   ];
 

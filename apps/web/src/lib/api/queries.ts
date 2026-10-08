@@ -1,64 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Client } from "openapi-fetch";
 
 import { useAuth } from "@/lib/auth/auth-provider";
-import { patchSessionWorkspace } from "@/lib/auth/session-store";
-import { api } from "./client";
-import { toApiError } from "./errors";
-import type { components, paths } from "./schema";
+import { clearSession, getAccessToken, patchSessionWorkspace } from "@/lib/auth/session-store";
+import { api, refreshSession } from "./client";
+import { ApiError, toApiError } from "./errors";
+import type { components } from "./schema";
 
 export type WorkspaceWithRole = components["schemas"]["WorkspaceWithRole"];
 export type WorkspaceSettings = components["schemas"]["WorkspaceSettingsOut"];
 export type WorkspaceSettingsUpdate = components["schemas"]["WorkspaceSettingsUpdate"];
 export type Member = components["schemas"]["MemberOut"];
 
-// /documents is not in schema.d.ts yet (run `npm run gen:api` against a current API to add it).
-// These mirror DocumentOut and DocumentPage in services/api/app/modules/knowledge/schemas.py.
-export interface DocumentItem {
-  id: string;
-  title: string;
-  filename: string;
-  mime_type: string;
-  size_bytes: number;
-  content_hash: string;
-  status: "uploaded" | "processing" | "ready" | "failed";
-  error: string | null;
-  chunk_count: number;
-  uploaded_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DocumentPage {
-  items: DocumentItem[];
-  next_cursor: string | null;
-}
-
-type DocumentPaths = {
-  "/api/v1/documents": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    get: {
-      parameters: {
-        query?: { cursor?: string; limit?: number };
-        header?: never;
-        path?: never;
-        cookie?: never;
-      };
-      requestBody?: never;
-      responses: {
-        200: {
-          headers: { [name: string]: unknown };
-          content: { "application/json": DocumentPage };
-        };
-      };
-    };
-  };
-};
-
-// Same client instance (and auth middleware), typed with the missing path.
-const documentsApi = api as unknown as Client<paths & DocumentPaths>;
+export type DocumentItem = components["schemas"]["DocumentOut"];
+export type DocumentStatus = components["schemas"]["DocumentStatus"];
+export type SearchResult = components["schemas"]["SearchResult"];
+export type SearchResponse = components["schemas"]["SearchResponse"];
 
 const DOCUMENTS_PAGE_SIZE = 100;
 const DOCUMENTS_MAX_PAGES = 50;
@@ -143,7 +101,17 @@ export function useMembers() {
   });
 }
 
-/** Every document in the workspace, following next_cursor until the last page. */
+const DOCUMENTS_POLL_MS = 2000;
+
+function isSettling(status: DocumentStatus): boolean {
+  return status === "uploaded" || status === "processing";
+}
+
+/**
+ * Every document in the workspace, following next_cursor until the last page.
+ * Shared by the knowledge page and the dashboard (same key, one fetch). Polls every 2s
+ * only while a document is still uploaded or processing.
+ */
 export function useDocuments() {
   const wid = useWorkspaceId();
   return useQuery({
@@ -152,7 +120,7 @@ export function useDocuments() {
       const items: DocumentItem[] = [];
       let cursor: string | undefined;
       for (let page = 0; page < DOCUMENTS_MAX_PAGES; page++) {
-        const { data, error, response } = await documentsApi.GET("/api/v1/documents", {
+        const { data, error, response } = await api.GET("/api/v1/documents", {
           params: { query: { limit: DOCUMENTS_PAGE_SIZE, cursor } },
         });
         if (!data) throw toApiError(error, response);
@@ -161,6 +129,136 @@ export function useDocuments() {
         cursor = data.next_cursor;
       }
       return items;
+    },
+    refetchInterval: (query) =>
+      query.state.data?.some((d) => isSettling(d.status)) ? DOCUMENTS_POLL_MS : false,
+  });
+}
+
+/** Replace or insert one document in the cached list (newest first). */
+function upsertDocument(list: DocumentItem[] | undefined, doc: DocumentItem): DocumentItem[] {
+  if (!list) return [doc];
+  return list.some((d) => d.id === doc.id)
+    ? list.map((d) => (d.id === doc.id ? doc : d))
+    : [doc, ...list];
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/*
+ * Multipart upload over XHR so the UI can show real progress (fetch has no upload
+ * progress events). Mirrors the API client's auth: one refresh-and-retry on 401.
+ */
+function sendUpload(
+  file: File,
+  token: string | null,
+  onProgress: (fraction: number) => void,
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/documents");
+    xhr.withCredentials = true;
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => resolve({ status: xhr.status, body: parseJson(xhr.responseText) });
+    // Network failure: surfaced by errorMessage() as "can't reach ResolveAI".
+    xhr.onerror = () => reject(new TypeError("Network request failed"));
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+}
+
+export function useUploadDocument() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      file,
+      onProgress,
+    }: {
+      file: File;
+      onProgress: (fraction: number) => void;
+    }): Promise<DocumentItem> => {
+      let result = await sendUpload(file, getAccessToken(), onProgress);
+      if (result.status === 401) {
+        const refreshed = await refreshSession();
+        if (!refreshed) {
+          clearSession();
+          throw new ApiError("Your session has ended. Log in again.", 401);
+        }
+        onProgress(0);
+        result = await sendUpload(file, refreshed.accessToken, onProgress);
+      }
+      if (result.status !== 202) {
+        throw toApiError(result.body, { status: result.status } as Response);
+      }
+      return result.body as DocumentItem;
+    },
+    onSuccess: (doc) => {
+      queryClient.setQueryData<DocumentItem[]>(queryKeys.documents(wid), (list) =>
+        upsertDocument(list, doc),
+      );
+    },
+  });
+}
+
+export function useReindexDocument() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error, response } = await api.POST(
+        "/api/v1/documents/{document_id}/reindex",
+        { params: { path: { document_id: id } } },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (doc) => {
+      queryClient.setQueryData<DocumentItem[]>(queryKeys.documents(wid), (list) =>
+        upsertDocument(list, doc),
+      );
+    },
+  });
+}
+
+export function useDeleteDocument() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error, response } = await api.DELETE("/api/v1/documents/{document_id}", {
+        params: { path: { document_id: id } },
+      });
+      if (!response.ok) throw toApiError(error, response);
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData<DocumentItem[]>(queryKeys.documents(wid), (list) =>
+        list?.filter((d) => d.id !== id),
+      );
+    },
+  });
+}
+
+/** Semantic search over ready documents. A mutation: it runs when the user submits. */
+export function useKnowledgeSearch() {
+  return useMutation({
+    mutationFn: async (query: string): Promise<SearchResponse> => {
+      const { data, error, response } = await api.POST("/api/v1/knowledge/search", {
+        body: { query },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
     },
   });
 }

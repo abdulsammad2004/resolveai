@@ -43,6 +43,15 @@ def clean_filename(raw: str | None) -> str:
     return name[-MAX_NAME_LENGTH:] or "document"
 
 
+def default_title(title: str | None, filename: str) -> str:
+    """Use the given title, or the filename without its extension when the title is empty
+    or the literal "string" (the placeholder API docs send for an untouched field)."""
+    cleaned = (title or "").strip()
+    if not cleaned or cleaned.lower() == "string":
+        return PurePath(filename).stem or filename
+    return cleaned[:MAX_NAME_LENGTH]
+
+
 async def _find_by_hash(
     db: AsyncSession, workspace_id: uuid.UUID, content_hash: str
 ) -> uuid.UUID | None:
@@ -83,7 +92,7 @@ async def upload_document(
         async with tenant_session(workspace_id, principal.user_id) as db:
             doc = Document(
                 workspace_id=workspace_id,
-                title=(title or "").strip()[:MAX_NAME_LENGTH] or PurePath(name).stem or name,
+                title=default_title(title, name),
                 filename=name,
                 mime_type=mime_type,
                 size_bytes=len(data),
