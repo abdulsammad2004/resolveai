@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, decode_widget_token
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -40,6 +40,35 @@ async def get_principal(
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
+
+
+@dataclass(frozen=True)
+class WidgetPrincipal:
+    """A widget visitor: one conversation in one workspace. Never a user."""
+
+    workspace_id: uuid.UUID
+    conversation_id: uuid.UUID
+    contact_id: uuid.UUID
+
+
+async def get_widget_principal(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> WidgetPrincipal:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    payload = decode_widget_token(credentials.credentials)
+    return WidgetPrincipal(
+        workspace_id=uuid.UUID(payload["wid"]),
+        conversation_id=uuid.UUID(payload["conversation_id"]),
+        contact_id=uuid.UUID(payload["contact_id"]),
+    )
+
+
+CurrentWidget = Annotated[WidgetPrincipal, Depends(get_widget_principal)]
 
 
 async def set_tenant_context(
@@ -81,8 +110,14 @@ async def get_tenant_db(principal: CurrentPrincipal) -> AsyncGenerator[AsyncSess
         yield session
 
 
+async def get_widget_db(widget: CurrentWidget) -> AsyncGenerator[AsyncSession, None]:
+    async with tenant_session(widget.workspace_id) as session:
+        yield session
+
+
 DBSession = Annotated[AsyncSession, Depends(get_session)]
 TenantDB = Annotated[AsyncSession, Depends(get_tenant_db)]
+WidgetDB = Annotated[AsyncSession, Depends(get_widget_db)]
 
 
 def require_role(*roles: str) -> Callable[[Principal], Awaitable[Principal]]:

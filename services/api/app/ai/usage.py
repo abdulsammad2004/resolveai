@@ -100,11 +100,14 @@ async def record_llm_call(
     error_type: str | None = None,
     prompt_version: str | None = None,
     request_id: str | None = None,
-) -> None:
+) -> uuid.UUID | None:
+    """Write one llm_calls row and return its id, or None if the write failed."""
+    call_id = uuid.uuid4()
     try:
         async with tenant_session(workspace_id) as db:
             db.add(
                 LLMCall(
+                    id=call_id,
                     workspace_id=workspace_id,
                     purpose=purpose,
                     provider=provider,
@@ -123,6 +126,8 @@ async def record_llm_call(
         logger.exception(
             "Failed to record llm call (workspace_id=%s, purpose=%s)", workspace_id, purpose
         )
+        return None
+    return call_id
 
 
 class MeteredEmbeddingClient:
@@ -208,6 +213,11 @@ class MeteredLLMClient:
         self.purpose = purpose
         self.prompt_version = prompt_version
         self.request_id = request_id
+        # The llm_calls row and token usage of the most recent call, for callers that link
+        # a stored result to its call or enforce a token budget.
+        self.last_call_id: uuid.UUID | None = None
+        self.last_input_tokens = 0
+        self.last_output_tokens = 0
 
     async def _record(
         self,
@@ -217,7 +227,9 @@ class MeteredLLMClient:
         status: LLMCallStatus,
         error_type: str | None = None,
     ) -> None:
-        await record_llm_call(
+        self.last_input_tokens = input_tokens
+        self.last_output_tokens = output_tokens
+        self.last_call_id = await record_llm_call(
             workspace_id=self.workspace_id,
             purpose=self.purpose.value,
             provider=self.inner.provider,

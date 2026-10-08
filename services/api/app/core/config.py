@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     retrieval_min_score: float = Field(default=0.30, ge=-1.0, le=1.0)
     retrieval_keep: int = Field(default=5, ge=1, le=50)
 
+    # Customer chat widget. The dev flag also allows http://localhost:3000 as a host origin.
+    widget_dev_allow_localhost: bool = False
+    widget_token_ttl_minutes: int = Field(default=60, ge=1, le=24 * 60)
+    widget_conversation_rate_per_minute: int = Field(default=10, ge=1)
+    widget_ip_rate_per_minute: int = Field(default=30, ge=1)
+    # Chat input + output tokens per workspace per UTC day; above it the widget replies
+    # with the fallback message instead of calling the LLM.
+    widget_daily_token_budget: int = Field(default=200_000, ge=0)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:
@@ -87,6 +96,8 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET must be set in production")
             if not self.refresh_cookie_secure:
                 raise ValueError("REFRESH_COOKIE_SECURE must be true in production")
+            if self.widget_dev_allow_localhost:
+                raise ValueError("WIDGET_DEV_ALLOW_LOCALHOST must be false in production")
         return self
 
     model_config = SettingsConfigDict(

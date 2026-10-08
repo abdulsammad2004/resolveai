@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -7,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -18,6 +20,8 @@ from app.core.config import Settings, get_settings
 # Tests never call OpenAI: force the deterministic fake embedder and chat client.
 os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ["LLM_PROVIDER"] = "fake"
+# Tests opt in to the dev localhost allowance explicitly, whatever the local .env says.
+os.environ["WIDGET_DEV_ALLOW_LOCALHOST"] = "false"
 _settings = Settings()
 os.environ["DATABASE_URL"] = _settings.test_database_url
 get_settings.cache_clear()
@@ -26,12 +30,17 @@ from app.ai.embeddings import FakeEmbeddingClient
 from app.core.database import engine as app_engine
 from app.core.storage import LocalStorage, get_storage
 from app.main import create_app
+from app.modules.conversations.limits import get_widget_limiter
 from app.workers.queue import get_job_queue
 
 API_DIR = Path(__file__).resolve().parents[1]
 TEST_OWNER_URL = _settings.test_migrations_database_url
 TEST_APP_URL = _settings.test_database_url
 TABLES = (
+    "feedback",
+    "messages",
+    "conversations",
+    "contacts",
     "llm_calls",
     "document_chunks",
     "documents",
@@ -87,6 +96,24 @@ class RecordingQueue:
         self.jobs.append((document_id, workspace_id))
 
 
+class InMemoryLimiter:
+    """Stands in for Redis: rate-limit counters and the daily token budget in a dict."""
+
+    def __init__(self) -> None:
+        self.hits: dict[str, int] = {}
+        self.tokens: dict[uuid.UUID, int] = {}
+
+    async def allow(self, key: str, limit: int, window_s: int) -> bool:
+        self.hits[key] = self.hits.get(key, 0) + 1
+        return self.hits[key] <= limit
+
+    async def tokens_used_today(self, workspace_id: uuid.UUID) -> int:
+        return self.tokens.get(workspace_id, 0)
+
+    async def add_tokens(self, workspace_id: uuid.UUID, tokens: int) -> None:
+        self.tokens[workspace_id] = self.tokens.get(workspace_id, 0) + tokens
+
+
 @pytest.fixture
 def storage(tmp_path: Path) -> LocalStorage:
     return LocalStorage(tmp_path / "storage")
@@ -108,12 +135,21 @@ def worker_ctx(storage: LocalStorage) -> dict:
 
 
 @pytest.fixture
-async def client(
-    storage: LocalStorage, job_queue: RecordingQueue
-) -> AsyncGenerator[AsyncClient, None]:
+def limiter() -> InMemoryLimiter:
+    return InMemoryLimiter()
+
+
+@pytest.fixture
+def app(storage: LocalStorage, job_queue: RecordingQueue, limiter: InMemoryLimiter) -> FastAPI:
     app = create_app()
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_job_queue] = lambda: job_queue
+    app.dependency_overrides[get_widget_limiter] = lambda: limiter
+    return app
+
+
+@pytest.fixture
+async def client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
@@ -215,3 +251,61 @@ async def as_agent_in(
     assert resp.status_code == 200, resp.text
     client.cookies.clear()
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+SHOP_ORIGIN = "https://shop.example"
+APP_ORIGIN = "http://localhost:3000"
+
+
+@dataclass
+class WidgetSession:
+    token: str
+    conversation_id: uuid.UUID
+    anonymous_id: str
+    workspace_name: str
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}"}
+
+
+async def widget_key(client: AsyncClient, owner: SignedUp, origins: list[str]) -> str:
+    """Set the workspace's allowed origins and return its widget key."""
+    resp = await client.patch(
+        "/api/v1/workspace/settings", json={"allowed_origins": origins}, headers=owner.headers
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["widget_public_key"]
+
+
+async def open_widget(
+    client: AsyncClient, key: str, origin: str = SHOP_ORIGIN, **body: object
+) -> WidgetSession:
+    resp = await client.post(
+        "/api/v1/widget/session",
+        json={"public_key": key, **body},
+        headers={"Origin": origin},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    return WidgetSession(
+        token=data["token"],
+        conversation_id=uuid.UUID(data["conversation_id"]),
+        anonymous_id=data["anonymous_id"],
+        workspace_name=data["workspace_name"],
+    )
+
+
+def parse_sse(body: str) -> list[tuple[str, dict]]:
+    """Split an SSE body into (event, data) pairs; comment lines are skipped."""
+    events = []
+    for block in body.split("\n\n"):
+        name, data = "message", None
+        for line in block.splitlines():
+            if line.startswith("event: "):
+                name = line[len("event: ") :]
+            elif line.startswith("data: "):
+                data = json.loads(line[len("data: ") :])
+        if data is not None:
+            events.append((name, data))
+    return events

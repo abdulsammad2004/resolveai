@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
+
 import { SetupProgress } from "@/components/dashboard/setup-progress";
 import { EmptyIllustration } from "@/components/empty-illustration";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, roleLabel, roleTone } from "@/components/status-chip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDocuments } from "@/lib/api/queries";
+import { useConversationCounts, useDocuments } from "@/lib/api/queries";
 import { useAuth } from "@/lib/auth/auth-provider";
 
 function greeting(date = new Date()): string {
@@ -20,6 +22,7 @@ export function DashboardView() {
   const { user, workspace, role } = useAuth();
   // Same query (and cache entry) as the knowledge page and the setup ring: one fetch.
   const documents = useDocuments();
+  const conversationCounts = useConversationCounts();
   const readyCount = documents.data?.filter((d) => d.status === "ready").length;
   const settlingCount =
     documents.data?.filter((d) => d.status === "uploaded" || d.status === "processing").length ?? 0;
@@ -36,6 +39,14 @@ export function DashboardView() {
       hint: "Messages from your chat widget will be counted here once ticket intake is live.",
     },
     {
+      label: "Conversations needing a person",
+      value: conversationCounts.data?.needs_human ?? (conversationCounts.isError ? null : 0),
+      loading: conversationCounts.isPending,
+      error: "Couldn't load conversations. Refresh to try again.",
+      href: "/conversations",
+      hint: "Widget chats the assistant couldn't answer from your docs.",
+    },
+    {
       label: "Awaiting review",
       value: 0 as number | null,
       loading: false,
@@ -45,6 +56,7 @@ export function DashboardView() {
       label: "Documents ready",
       value: readyCount ?? (documents.isError ? null : 0),
       loading: documents.isPending,
+      error: "Couldn't load documents. Refresh to try again.",
       hint:
         settlingCount > 0
           ? `${settlingCount} more ${settlingCount === 1 ? "is" : "are"} still processing.`
@@ -66,7 +78,7 @@ export function DashboardView() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.label} className="flex flex-col justify-between">
             <CardHeader className="pb-2">
@@ -81,8 +93,16 @@ export function DashboardView() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-ash leading-relaxed">
-                {stat.value === null ? "Couldn't load documents. Refresh to try again." : stat.hint}
+                {stat.value === null ? stat.error : stat.hint}
               </p>
+              {stat.href && (
+                <Link
+                  href={stat.href}
+                  className="mt-2 inline-block text-xs font-medium text-ion underline-offset-4 hover:underline"
+                >
+                  View conversations
+                </Link>
+              )}
             </CardContent>
           </Card>
         ))}
