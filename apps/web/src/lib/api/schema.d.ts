@@ -193,6 +193,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspace/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Demo Tools
+         * @description Whether dev/demo tools (the reset button) are available on this server.
+         */
+        get: operations["demo_tools_api_v1_workspace_demo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/demo/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Demo Data
+         * @description Dev/demo only (DEMO_TOOLS_ENABLED), owners only: delete the caller's workspace's
+         *     conversations, inbox, drafts, actions and audit events, and reset its sample orders.
+         *     The workspace always comes from the access token.
+         */
+        post: operations["reset_demo_data_api_v1_workspace_demo_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents": {
         parameters: {
             query?: never;
@@ -367,6 +409,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tickets/{ticket_id}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write Reply
+         * @description Start a reply from scratch (no AI text). It replaces any draft still under review.
+         */
+        post: operations["write_reply_api_v1_tickets__ticket_id__drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Draft */
+        patch: operations["edit_draft_api_v1_tickets__ticket_id__drafts__draft_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/drafts/{draft_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Draft
+         * @description Post the draft in the customer's chat as a team reply; the ticket becomes replied.
+         *     A draft is sent once: sending it again returns 409.
+         */
+        post: operations["send_draft_api_v1_tickets__ticket_id__drafts__draft_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/drafts/{draft_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Draft */
+        post: operations["reject_draft_api_v1_tickets__ticket_id__drafts__draft_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/actions": {
         parameters: {
             query?: never;
@@ -376,11 +493,53 @@ export interface paths {
         };
         /**
          * List Actions
-         * @description Newest first, across all tickets, with each ticket's subject.
+         * @description Newest first, across all tickets, with each ticket's subject, customer and order.
          */
         get: operations["list_actions_api_v1_actions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Action
+         * @description Approve and queue execution; poll the action (or its ticket) for the result.
+         *
+         *     Approving twice is safe: the action moves to approved once and runs at most once.
+         */
+        post: operations["approve_action_api_v1_actions__action_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Action
+         * @description Reject with a reason. Nothing is carried out.
+         */
+        post: operations["reject_action_api_v1_actions__action_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -468,10 +627,57 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Conversation */
+        /**
+         * Get Conversation
+         * @description The conversation's messages. With `after` (the id of the newest message the widget
+         *     has), only newer ones: the widget polls this way for team replies. Polling calls no
+         *     model and doesn't count toward the message rate limits or the token budget. An unknown
+         *     `after` id returns the whole conversation.
+         */
         get: operations["get_conversation_api_v1_widget_conversation_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/conversation/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Conversation
+         * @description "Still need help?" on a resolved conversation: reopens the same ticket and
+         *     conversation (still with the team). 409 unless the conversation was resolved.
+         */
+        post: operations["reopen_conversation_api_v1_widget_conversation_reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/conversation/resolution-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate Resolution
+         * @description "Was this helpful?" after a resolve, stored on the ticket. 409 unless resolved.
+         */
+        post: operations["rate_resolution_api_v1_widget_conversation_resolution_feedback_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -536,6 +742,20 @@ export interface components {
              * @enum {string}
              */
             status: "proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed";
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decided By Name */
+            decided_by_name?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decision Reason */
+            decision_reason?: string | null;
+            /** Executed At */
+            executed_at?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -548,6 +768,18 @@ export interface components {
             updated_at: string;
             /** Ticket Subject */
             ticket_subject: string;
+            contact?: components["schemas"]["ContactOut"] | null;
+            /** Order Number */
+            order_number?: string | null;
+            /** Amount */
+            amount?: string | null;
+            /** Order Total */
+            order_total?: string | null;
+        };
+        /** ActionReject */
+        ActionReject: {
+            /** Reason */
+            reason: string;
         };
         /** ActionRequestOut */
         ActionRequestOut: {
@@ -581,6 +813,20 @@ export interface components {
              * @enum {string}
              */
             status: "proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed";
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decided By Name */
+            decided_by_name?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decision Reason */
+            decision_reason?: string | null;
+            /** Executed At */
+            executed_at?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -591,6 +837,42 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** AuditEventOut */
+        AuditEventOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Actor Type
+             * @enum {string}
+             */
+            actor_type: "user" | "ai" | "system" | "customer";
+            /** Actor Id */
+            actor_id: string | null;
+            /** Actor Name */
+            actor_name: string | null;
+            /** Action */
+            action: string;
+            /** Target Type */
+            target_type: string;
+            /** Target Id */
+            target_id: string | null;
+            /** Before */
+            before: {
+                [key: string]: unknown;
+            } | null;
+            /** After */
+            after: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** AuthResponse */
         AuthResponse: {
@@ -752,6 +1034,20 @@ export interface components {
              */
             status: "open" | "needs_human" | "closed";
         };
+        /** DemoResetOut */
+        DemoResetOut: {
+            /** Deleted */
+            deleted: {
+                [key: string]: number;
+            };
+            /** Mock Orders Reset */
+            mock_orders_reset: number;
+        };
+        /** DemoToolsOut */
+        DemoToolsOut: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /**
          * DocumentOut
          * @description Public document shape. Never includes storage_key.
@@ -802,6 +1098,35 @@ export interface components {
          * @enum {string}
          */
         DocumentStatus: "uploaded" | "processing" | "ready" | "failed";
+        /**
+         * DraftCreate
+         * @description Start a reply from scratch. It can stay empty until it is edited or sent.
+         */
+        DraftCreate: {
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+        };
+        /** DraftEdit */
+        DraftEdit: {
+            /** Content */
+            content: string;
+        };
+        /** DraftReject */
+        DraftReject: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * DraftSend
+         * @description Send the draft. With `content`, that text is saved (as an edit) and sent.
+         */
+        DraftSend: {
+            /** Content */
+            content?: string | null;
+        };
         /** FeedbackOut */
         FeedbackOut: {
             /**
@@ -905,6 +1230,10 @@ export interface components {
              */
             created_at: string;
             feedback?: components["schemas"]["FeedbackOut"] | null;
+            /** Authored By */
+            authored_by?: ("ai_draft" | "ai_draft_edited" | "human") | null;
+            /** Author Name */
+            author_name?: string | null;
         };
         /** MockOrderOut */
         MockOrderOut: {
@@ -963,6 +1292,13 @@ export interface components {
             id: string;
             /** Content */
             content: string;
+            /** Original Content */
+            original_content: string;
+            /**
+             * Author Type
+             * @enum {string}
+             */
+            author_type: "ai" | "human";
             /** Citations */
             citations: components["schemas"]["Citation"][];
             /**
@@ -974,11 +1310,27 @@ export interface components {
             prompt_version: string | null;
             /** Error */
             error: string | null;
+            /** Reviewed By */
+            reviewed_by: string | null;
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Rejection Reason */
+            rejection_reason: string | null;
+            /** Sent At */
+            sent_at: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+        };
+        /** ResolutionFeedbackRequest */
+        ResolutionFeedbackRequest: {
+            /**
+             * Rating
+             * @enum {string}
+             */
+            rating: "up" | "down";
         };
         /**
          * Role
@@ -1116,6 +1468,8 @@ export interface components {
             description: string | null;
             classification: components["schemas"]["ClassificationOut"] | null;
             conversation: components["schemas"]["ConversationDetail"] | null;
+            /** Resolution Rating */
+            resolution_rating?: ("up" | "down") | null;
             draft?: components["schemas"]["ReplyDraftOut"] | null;
             /**
              * Actions
@@ -1127,6 +1481,11 @@ export interface components {
              * @default []
              */
             tool_calls: components["schemas"]["ToolCallOut"][];
+            /**
+             * Activity
+             * @default []
+             */
+            activity: components["schemas"]["AuditEventOut"][];
         };
         /** TicketPage */
         TicketPage: {
@@ -1255,6 +1614,15 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "needs_human" | "closed";
+            /** Closed At */
+            closed_at?: string | null;
+            /**
+             * Resolved
+             * @default false
+             */
+            resolved: boolean;
+            /** Resolution Rating */
+            resolution_rating?: ("up" | "down") | null;
             /** Messages */
             messages: components["schemas"]["WidgetMessageOut"][];
         };
@@ -1753,6 +2121,46 @@ export interface operations {
             };
         };
     };
+    demo_tools_api_v1_workspace_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoToolsOut"];
+                };
+            };
+        };
+    };
+    reset_demo_data_api_v1_workspace_demo_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoResetOut"];
+                };
+            };
+        };
+    };
     list_documents_api_v1_documents_get: {
         parameters: {
             query?: {
@@ -2207,6 +2615,149 @@ export interface operations {
             };
         };
     };
+    write_reply_api_v1_tickets__ticket_id__drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_draft_api_v1_tickets__ticket_id__drafts__draft_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_draft_api_v1_tickets__ticket_id__drafts__draft_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftSend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_draft_api_v1_tickets__ticket_id__drafts__draft_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_actions_api_v1_actions_get: {
         parameters: {
             query?: {
@@ -2226,6 +2777,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_action_api_v1_actions__action_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_action_api_v1_actions__action_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionRequestOut"];
                 };
             };
             /** @description Validation Error */
@@ -2354,6 +2971,37 @@ export interface operations {
     };
     get_conversation_api_v1_widget_conversation_get: {
         parameters: {
+            query?: {
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetConversationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_conversation_api_v1_widget_conversation_reopen_post: {
+        parameters: {
             query?: never;
             header?: never;
             path?: never;
@@ -2368,6 +3016,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WidgetConversationOut"];
+                };
+            };
+        };
+    };
+    rate_resolution_api_v1_widget_conversation_resolution_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolutionFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetConversationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

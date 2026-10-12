@@ -2,9 +2,11 @@
 
 import {
   ArrowUp,
+  CircleCheck,
   Hourglass,
   PackageCheck,
   RotateCcw,
+  SquarePen,
   ThumbsDown,
   ThumbsUp,
   UsersRound,
@@ -30,12 +32,15 @@ import {
   createSession,
   fetchConversation,
   loadStoredSession,
+  rateResolution,
+  reopenConversation,
   sendFeedback,
   sendMessage,
   storeSession,
   type HostMessage,
   type Rating,
   type StoredSession,
+  type WidgetConversation,
   type WidgetMessage,
   type WidgetMessageToHost,
 } from "@/lib/widget/api";
@@ -43,6 +48,8 @@ import {
 const MAX_CHARS = 2000;
 const COUNTER_FROM = 1800;
 const HANDSHAKE_TIMEOUT_MS = 1000;
+// How often an open, visible, idle chat checks for replies from the team.
+const POLL_MS = 5000;
 const SUGGESTIONS = [
   "How do returns work?",
   "How long does shipping take?",
@@ -57,6 +64,14 @@ type Phase =
   | { kind: "offline"; message: string };
 
 type Failure = { content: string; message: string };
+
+/** Whether the conversation is closed (read-only) and, if resolved, the customer's rating. */
+type Closure = { resolved: boolean; rating: Rating | null } | null;
+
+function closureOf(conversation: WidgetConversation): Closure {
+  if (conversation.status !== "closed") return null;
+  return { resolved: conversation.resolved ?? false, rating: conversation.resolution_rating ?? null };
+}
 
 function postToHost(type: WidgetMessageToHost["type"], targetOrigin: string) {
   if (window.parent === window) return;
@@ -95,6 +110,10 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
   const embedded = useEmbedded();
   const [workspaceName, setWorkspaceName] = useState("");
   const [messages, setMessages] = useState<WidgetMessage[]>([]);
+  // Set while the conversation is closed: shown read-only with a banner; writing again starts
+  // a new conversation.
+  const [closure, setClosure] = useState<Closure>(null);
+  const [reopening, setReopening] = useState(false);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
   // What the assistant is checking before it answers, e.g. "Checking your order…".
@@ -114,11 +133,12 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
 
   /* Session ------------------------------------------------------------------------------ */
 
-  const openSession = useCallback(async (): Promise<StoredSession> => {
+  /** Resume the stored conversation, or with `fresh` start a new one (same visitor). */
+  const openSession = useCallback(async (fresh = false): Promise<StoredSession> => {
     const previous = session.current ?? loadStoredSession(publicKey);
     const created = await createSession({
       public_key: publicKey,
-      conversation_id: previous?.conversationId,
+      conversation_id: fresh ? undefined : previous?.conversationId,
       anonymous_id: previous?.anonymousId,
       host_origin: hostOrigin.current,
     });
@@ -149,6 +169,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
         conversation = await fetchConversation((await openSession()).token);
       }
       setMessages(conversation.messages);
+      setClosure(closureOf(conversation));
       setPhase({ kind: "ready" });
     } catch (error) {
       const blocked = blockedMessage(error);
@@ -211,6 +232,101 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [embedded]);
 
+  /* Team replies ------------------------------------------------------------------------- */
+
+  // Latest messages for the poller, without restarting its timer on every change.
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // While the chat is open, visible and idle, ask for messages newer than the last one we
+  // have, so a teammate's reply shows up without a reload.
+  useEffect(() => {
+    if (phase.kind !== "ready" || busy) return;
+    let stopped = false;
+    const timer = window.setInterval(async () => {
+      if (document.hidden) return;
+      const last = messagesRef.current.at(-1);
+      // A message only shown locally (a failed send) has no server id to page from.
+      if (last?.id.startsWith("local-")) return;
+      try {
+        const token = await validToken();
+        const conversation = await fetchConversation(token, last?.id);
+        if (stopped) return;
+        // Resolved or reopened by the team since the last poll.
+        setClosure(closureOf(conversation));
+        if (conversation.messages.length === 0) return;
+        setMessages((list) => {
+          const known = new Set(list.map((m) => m.id));
+          const fresh = conversation.messages.filter((m) => !known.has(m.id));
+          return fresh.length ? [...list, ...fresh] : list;
+        });
+        const reply = conversation.messages.findLast((m) => m.role === "agent");
+        if (reply) setAnnouncement(`New reply from the team: ${reply.content.replace(/\[S\d+\]/g, "")}`);
+      } catch {
+        // Offline for a moment: the next tick tries again.
+      }
+    }, POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [phase.kind, busy, validToken]);
+
+  const [startingNew, setStartingNew] = useState(false);
+
+  /** A new conversation for the same visitor; returns its token. */
+  async function startFresh(): Promise<string> {
+    const fresh = await openSession(true);
+    setMessages([]);
+    setClosure(null);
+    return fresh.token;
+  }
+
+  async function newChat() {
+    if (busy || startingNew) return;
+    setStartingNew(true);
+    try {
+      await startFresh();
+      setFailure(null);
+      setRateLimited(null);
+      setAnnouncement("Started a new chat.");
+      inputRef.current?.focus();
+    } catch {
+      setAnnouncement("We couldn't start a new chat. Check your connection and try again.");
+    } finally {
+      setStartingNew(false);
+    }
+  }
+
+  async function stillNeedHelp() {
+    if (reopening) return;
+    setReopening(true);
+    try {
+      const conversation = await reopenConversation(await validToken());
+      setClosure(closureOf(conversation));
+      setAnnouncement("Reopened. A teammate will pick this up; tell us what you still need.");
+      inputRef.current?.focus();
+    } catch {
+      setAnnouncement("We couldn't reopen this conversation. Try again.");
+    } finally {
+      setReopening(false);
+    }
+  }
+
+  async function rateClosure(rating: Rating) {
+    const previous = closure;
+    setClosure((c) => (c ? { ...c, rating } : c));
+    try {
+      setClosure(closureOf(await rateResolution(await validToken(), rating)));
+      setAnnouncement("Thanks for the feedback.");
+    } catch {
+      setClosure(previous);
+      setAnnouncement("Your feedback couldn't be saved. Try again.");
+    }
+  }
+
   /* Scrolling ---------------------------------------------------------------------------- */
 
   function onScroll() {
@@ -221,7 +337,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
   useEffect(() => {
     const el = listRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming, failure, rateLimited]);
+  }, [messages, streaming, failure, rateLimited, closure]);
 
   useEffect(() => {
     if (!rateLimited) return;
@@ -240,19 +356,28 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
     stickToBottom.current = true;
     localIds.current += 1;
     const localId = `local-${localIds.current}`;
-    if (!retry) {
-      setMessages((list) => [
-        ...list,
-        {
-          id: localId,
-          role: "customer",
-          content: text,
-          citations: [],
-          grounded: null,
-          tools_used: [],
-          created_at: new Date().toISOString(),
-        },
-      ]);
+    const local: WidgetMessage = {
+      id: localId,
+      role: "customer",
+      content: text,
+      citations: [],
+      grounded: null,
+      tools_used: [],
+      created_at: new Date().toISOString(),
+    };
+    // A closed conversation is read-only: writing again starts a new one, which the
+    // assistant handles from scratch.
+    let freshToken: string | undefined;
+    if (closure) {
+      try {
+        freshToken = await startFresh();
+      } catch {
+        setFailure({ content: text, message: "We couldn't start a new chat. Check your connection and try again." });
+        return;
+      }
+    }
+    if (!retry || freshToken) {
+      setMessages((list) => [...list, local]);
       setDraft("");
     }
     setStreaming("");
@@ -273,11 +398,19 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
     try {
       let answer;
       try {
-        answer = await attempt(await validToken());
+        answer = await attempt(freshToken ?? (await validToken()));
       } catch (error) {
-        if (!(error instanceof WidgetError && error.status === 401)) throw error;
-        setStreaming("");
-        answer = await attempt((await openSession()).token);
+        if (error instanceof WidgetError && error.status === 409) {
+          // Resolved by the team while this was being written: send it in a new chat.
+          setStreaming("");
+          const token = await startFresh();
+          setMessages([local]);
+          answer = await attempt(token);
+        } else {
+          if (!(error instanceof WidgetError && error.status === 401)) throw error;
+          setStreaming("");
+          answer = await attempt((await openSession()).token);
+        }
       }
       setMessages((list) => [
         ...list,
@@ -364,6 +497,19 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
           </h1>
           <p className="truncate text-xs text-ash">AI answers from our help docs</p>
         </div>
+        {phase.kind === "ready" && (
+          <button
+            type="button"
+            onClick={() => void newChat()}
+            disabled={busy || startingNew}
+            aria-label="Start a new chat"
+            title="New chat"
+            className="pressable inline-flex items-center gap-1.5 rounded-[6px] px-2 py-2 text-xs text-ash hover:bg-white/[0.06] hover:text-bone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ion disabled:opacity-40"
+          >
+            <SquarePen className="size-4" aria-hidden />
+            <span className="hidden sm:inline">New chat</span>
+          </button>
+        )}
         {embedded && (
           <button
             type="button"
@@ -458,7 +604,18 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
                   aria-label={m.role === "agent" ? "Reply from the team" : "Assistant answer"}
                   className="flex max-w-[92%] flex-col gap-2"
                 >
-                  <div className="rounded-[12px] rounded-tl-[4px] border border-line bg-carbon px-3.5 py-2.5">
+                  {m.role === "agent" && (
+                    <span className="flex items-center gap-1.5 text-[11px] text-ash">
+                      <UsersRound className="size-3" aria-hidden />
+                      Support team
+                    </span>
+                  )}
+                  <div
+                    className={cn(
+                      "rounded-[12px] rounded-tl-[4px] border bg-carbon px-3.5 py-2.5",
+                      m.role === "agent" ? "border-resolved/30" : "border-line",
+                    )}
+                  >
                     <CitedAnswer content={m.content} citations={m.citations} />
                     {m.tools_used?.includes("get_order_status") && (
                       <span className="mt-2 mr-1.5 inline-flex items-center gap-1.5 rounded-[4px] border border-ion/25 bg-ion/10 px-1.5 py-0.5 text-[11px] text-bone">
@@ -473,11 +630,46 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
                       </span>
                     )}
                   </div>
-                  {m.role === "assistant" && (
+                  {m.role === "assistant" && !closure && (
                     <Feedback rating={m.rating ?? null} onRate={(r) => void rate(m.id, r)} />
                   )}
                 </article>
               ),
+            )}
+
+            {closure && !busy && (
+              <div
+                role="status"
+                className="flex flex-col items-center gap-2.5 rounded-[8px] border border-line bg-carbon px-4 py-3 text-center text-sm"
+              >
+                <p className="flex items-center gap-1.5 font-medium text-bone">
+                  <CircleCheck className="size-4 text-resolved" aria-hidden />
+                  {closure.resolved
+                    ? "This conversation was marked resolved."
+                    : "This conversation was closed."}
+                </p>
+                {closure.resolved && (
+                  <>
+                    <div className="flex items-center gap-1.5 text-xs text-ash">
+                      Was this helpful?
+                      <Feedback
+                        rating={closure.rating}
+                        onRate={(r) => void rateClosure(r)}
+                        label="Rate how this was resolved"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void stillNeedHelp()}
+                      disabled={reopening}
+                      className="pressable text-xs font-medium text-ion underline-offset-4 hover:underline focus-visible:rounded-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ion disabled:opacity-50"
+                    >
+                      {reopening ? "Reopening…" : "Still need help with this?"}
+                    </button>
+                  </>
+                )}
+                <p className="text-[11px] text-ash">Something else? Send a message to start a new chat.</p>
+              </div>
             )}
 
             {streaming !== null && (
@@ -543,7 +735,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
                 onKeyDown={onKeyDown}
                 rows={1}
                 maxLength={MAX_CHARS}
-                placeholder="Ask a question…"
+                placeholder={closure ? "Start a new chat…" : "Ask a question…"}
                 aria-describedby={remaining <= MAX_CHARS - COUNTER_FROM ? "widget-counter" : undefined}
                 className="field-sizing-content max-h-32 min-h-10 flex-1 resize-none rounded-[6px] border border-line bg-carbon-input px-3 py-2 text-[15px] leading-snug text-bone placeholder:text-ash focus-visible:border-ion/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ion/40"
               />
@@ -571,13 +763,21 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
   );
 }
 
-function Feedback({ rating, onRate }: { rating: Rating | null; onRate: (rating: Rating) => void }) {
+function Feedback({
+  rating,
+  onRate,
+  label = "Rate this answer",
+}: {
+  rating: Rating | null;
+  onRate: (rating: Rating) => void;
+  label?: string;
+}) {
   const options = [
     { value: "up" as const, label: "Helpful", Icon: ThumbsUp },
     { value: "down" as const, label: "Not helpful", Icon: ThumbsDown },
   ];
   return (
-    <div className="flex items-center gap-1 pl-1" role="group" aria-label="Rate this answer">
+    <div className="flex items-center gap-1 pl-1" role="group" aria-label={label}>
       {options.map(({ value, label, Icon }) => (
         <button
           key={value}

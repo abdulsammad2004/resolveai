@@ -38,6 +38,9 @@ export type ProposedAction = components["schemas"]["ActionRequestOut"];
 export type ActionListItem = components["schemas"]["ActionListItem"];
 export type ActionStatus = ProposedAction["status"];
 export type ToolCallRecord = components["schemas"]["ToolCallOut"];
+export type AuditEvent = components["schemas"]["AuditEventOut"];
+export type DemoReset = components["schemas"]["DemoResetOut"];
+export type TranscriptMessage = components["schemas"]["MessageOut"];
 
 const DOCUMENTS_PAGE_SIZE = 100;
 const DOCUMENTS_MAX_PAGES = 50;
@@ -56,6 +59,7 @@ export const queryKeys = {
   ticketList: (wid: string, filters: TicketFilters) => [wid, "tickets", "list", filters] as const,
   ticket: (wid: string, id: string) => [wid, "tickets", "detail", id] as const,
   mockOrders: (wid: string) => [wid, "mock-orders"] as const,
+  demoTools: (wid: string) => [wid, "demo-tools"] as const,
   actions: (wid: string) => [wid, "actions"] as const,
   actionList: (wid: string, status: ActionStatus | "all") =>
     [wid, "actions", "list", status] as const,
@@ -442,8 +446,12 @@ export function useTicket(
       if (!data) throw toApiError(error, response);
       return data;
     },
-    refetchInterval: (query) =>
-      query.state.data && awaitingDraft?.(query.state.data) ? DRAFT_POLL_MS : TICKETS_POLL_MS,
+    refetchInterval: (query) => {
+      const ticket = query.state.data;
+      if (!ticket) return TICKETS_POLL_MS;
+      if (awaitingDraft?.(ticket)) return DRAFT_POLL_MS;
+      return ticket.actions.some(isActionRunning) ? ACTION_RUNNING_POLL_MS : TICKETS_POLL_MS;
+    },
   });
 }
 
@@ -466,7 +474,131 @@ export function useRegenerateDraft() {
   });
 }
 
+/** After a draft change: show the returned ticket, refresh the lists. */
+function useTicketResult() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return (ticket: TicketDetail) => {
+    queryClient.setQueryData(queryKeys.ticket(wid, ticket.id), ticket);
+    queryClient.invalidateQueries({ queryKey: queryKeys.tickets(wid) });
+  };
+}
+
+/** "Write reply": start a blank reply (no AI text). It replaces a draft still under review. */
+export function useWriteReply() {
+  const onSuccess = useTicketResult();
+  return useMutation({
+    mutationFn: async (ticketId: string) => {
+      const { data, error, response } = await api.POST("/api/v1/tickets/{ticket_id}/drafts", {
+        params: { path: { ticket_id: ticketId } },
+        body: { content: "" },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess,
+  });
+}
+
+export function useEditDraft() {
+  const onSuccess = useTicketResult();
+  return useMutation({
+    mutationFn: async (v: { ticketId: string; draftId: string; content: string }) => {
+      const { data, error, response } = await api.PATCH(
+        "/api/v1/tickets/{ticket_id}/drafts/{draft_id}",
+        { params: { path: { ticket_id: v.ticketId, draft_id: v.draftId } }, body: { content: v.content } },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess,
+  });
+}
+
+/** Post the draft in the customer's chat. With `content`, those edits are saved and sent. */
+export function useSendDraft() {
+  const onSuccess = useTicketResult();
+  return useMutation({
+    mutationFn: async (v: { ticketId: string; draftId: string; content?: string }) => {
+      const { data, error, response } = await api.POST(
+        "/api/v1/tickets/{ticket_id}/drafts/{draft_id}/send",
+        {
+          params: { path: { ticket_id: v.ticketId, draft_id: v.draftId } },
+          body: v.content === undefined ? {} : { content: v.content },
+        },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess,
+  });
+}
+
+export function useRejectDraft() {
+  const onSuccess = useTicketResult();
+  return useMutation({
+    mutationFn: async (v: { ticketId: string; draftId: string; reason?: string }) => {
+      const { data, error, response } = await api.POST(
+        "/api/v1/tickets/{ticket_id}/drafts/{draft_id}/reject",
+        {
+          params: { path: { ticket_id: v.ticketId, draft_id: v.draftId } },
+          body: { reason: v.reason || null },
+        },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess,
+  });
+}
+
 const ACTIONS_POLL_MS = 10_000;
+// While an approved action is being carried out by the worker.
+const ACTION_RUNNING_POLL_MS = 2_000;
+
+export function isActionRunning(action: Pick<ProposedAction, "status">) {
+  return action.status === "approved" || action.status === "executing";
+}
+
+/** After an approve or reject: refresh the action lists and the action's ticket. */
+function useActionResult() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return (action: ProposedAction) => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.actions(wid) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.ticket(wid, action.ticket_id) });
+  };
+}
+
+/** Approve: the action is queued and carried out in the background (poll for the result). */
+export function useApproveAction() {
+  const onSuccess = useActionResult();
+  return useMutation({
+    mutationFn: async (actionId: string) => {
+      const { data, error, response } = await api.POST("/api/v1/actions/{action_id}/approve", {
+        params: { path: { action_id: actionId } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess,
+  });
+}
+
+export function useRejectAction() {
+  const onSuccess = useActionResult();
+  return useMutation({
+    mutationFn: async (v: { actionId: string; reason: string }) => {
+      const { data, error, response } = await api.POST("/api/v1/actions/{action_id}/reject", {
+        params: { path: { action_id: v.actionId } },
+        body: { reason: v.reason },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess,
+  });
+}
 
 /** Actions the AI proposed across all tickets, newest first (the Approvals page). */
 export function useActions(status: ActionStatus | "all" = "proposed") {
@@ -480,7 +612,8 @@ export function useActions(status: ActionStatus | "all" = "proposed") {
       if (!data) throw toApiError(error, response);
       return data.items;
     },
-    refetchInterval: ACTIONS_POLL_MS,
+    refetchInterval: (query) =>
+      query.state.data?.some(isActionRunning) ? ACTION_RUNNING_POLL_MS : ACTIONS_POLL_MS,
   });
 }
 
@@ -543,6 +676,43 @@ export function useSeedMockOrders() {
     },
     onSuccess: (result) => {
       queryClient.setQueryData(queryKeys.mockOrders(wid), result.orders);
+    },
+  });
+}
+
+/** Whether this server has dev/demo tools on (DEMO_TOOLS_ENABLED). Off in production. */
+export function useDemoTools() {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.demoTools(wid),
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/v1/workspace/demo");
+      if (!data) throw toApiError(error, response);
+      return data.enabled;
+    },
+    staleTime: Infinity,
+  });
+}
+
+/** Dev/demo only, owners only: wipe this workspace's conversations, inbox and approvals. */
+export function useResetDemoData() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<DemoReset> => {
+      const { data, error, response } = await api.POST("/api/v1/workspace/demo/reset");
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: () => {
+      for (const key of [
+        queryKeys.conversations(wid),
+        queryKeys.tickets(wid),
+        queryKeys.actions(wid),
+        queryKeys.mockOrders(wid),
+      ]) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
     },
   });
 }
