@@ -1,19 +1,18 @@
-import { Inbox } from "lucide-react";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { TicketsView } from "@/components/tickets/tickets-view";
 
 export const metadata: Metadata = { title: "Inbox" };
 
-export default function TicketsPage() {
+// `?ticket=<id>` opens that ticket (links from Approvals). Search params are runtime data,
+// so they are read inside a Suspense boundary.
+export default function TicketsPage({ searchParams }: PageProps<"/tickets">) {
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title="Inbox" />
-      <EmptyState icon={Inbox} title="No tickets yet">
-        Once ticket intake ships, the next milestone after the knowledge base, every message from
-        your chat widget will arrive here as a ticket, already classified and prioritised.
-      </EmptyState>
-    </div>
+    <Suspense fallback={<TicketsView />}>
+      {searchParams.then(({ ticket }) => (
+        <TicketsView initialTicketId={typeof ticket === "string" ? ticket : null} />
+      ))}
+    </Suspense>
   );
 }

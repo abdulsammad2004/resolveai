@@ -40,6 +40,8 @@ const AuthContext = React.createContext<AuthContextValue | null>(null);
 
 const getServerSession = () => null;
 
+const WIDGET_PATH_PREFIX = "/widget/";
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const session: Session | null = React.useSyncExternalStore(
@@ -50,10 +52,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [restored, setRestored] = React.useState(false);
 
   // Restore the session from the httpOnly refresh cookie, then confirm it with /auth/me.
+  // Not inside the chat widget (an iframe on customers' sites, with its own widget token).
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const refreshed = await refreshSession();
+      const isWidget = window.location.pathname.startsWith(WIDGET_PATH_PREFIX);
+      const refreshed = isWidget ? null : await refreshSession();
       if (refreshed) {
         try {
           const { data } = await api.GET("/api/v1/auth/me");

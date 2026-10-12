@@ -1,66 +1,66 @@
-import { BookOpenText, Sparkles } from "lucide-react";
-
+import { BookOpenText, Check, Sparkles } from "lucide-react";
 import { StatusChip } from "@/components/status-chip";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
-/*
- * Static product preview for the auth screens, built from real components.
- * `inert` keeps it out of the tab order and stops clicks; it is illustration only.
- */
 export function ProductPreview() {
   return (
-    <figure className="flex w-full max-w-[560px] flex-col gap-4">
+    <div className="flex w-full max-w-[560px] flex-col gap-4">
       <div
         inert
         aria-label="Example: ResolveAI drafts a reply to a customer and waits for your approval"
         role="img"
-        className="glass flex flex-col gap-5 rounded-panel p-6 sm:p-8"
+        className="flex flex-col gap-5 rounded-panel border border-line bg-carbon p-6 sm:p-8 shadow-2xl"
       >
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 border-b border-line pb-4">
           <div className="flex items-center gap-3">
-            <Avatar>
+            <Avatar className="border border-line bg-carbon-elevated text-xs font-semibold text-bone">
               <AvatarFallback>MR</AvatarFallback>
             </Avatar>
             <div className="leading-tight">
-              <p className="font-medium text-mist">Maya Robinson</p>
-              <p className="text-sm text-mist-dim">Chat · 2 min ago</p>
+              <p className="font-semibold text-bone">Maya Robinson</p>
+              <p className="text-xs text-ash">Live chat · 2 min ago</p>
             </div>
           </div>
-          <StatusChip tone="neutral">Order status</StatusChip>
+          <StatusChip tone="neutral">Example</StatusChip>
         </div>
 
-        <div className="max-w-[85%] rounded-card rounded-tl-md border border-white/10 bg-white/[0.06] px-4 py-3 text-mist">
-          Hi, my order #4821 hasn&apos;t arrived yet. Can you check?
+        {/* Customer bubble */}
+        <div className="max-w-[85%] rounded-[6px] border border-line bg-carbon-elevated px-4 py-3 text-sm text-bone">
+          Hi, my order hasn&apos;t arrived yet. Can you check?
         </div>
 
-        <div className="glass-elevated ml-auto flex w-[92%] flex-col gap-4 rounded-card p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-auto inline-flex items-center gap-2 text-sm font-medium text-seafoam">
-              <Sparkles className="size-4" aria-hidden />
+        {/* AI Agent draft card */}
+        <div className="ml-auto flex w-[94%] flex-col gap-4 rounded-[6px] border border-ion/30 bg-ion/[0.04] p-5 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ion">
+              <Sparkles className="size-3.5" aria-hidden />
               AI draft
             </span>
-            <StatusChip tone="neutral">
-              <BookOpenText className="size-3.5" aria-hidden />
-              Shipping policy
-            </StatusChip>
-            <StatusChip tone="amber">Awaiting review</StatusChip>
+            <div className="flex items-center gap-2">
+              <StatusChip tone="neutral">
+                <BookOpenText className="size-3 mr-1" aria-hidden />
+                Shipping policy
+              </StatusChip>
+              <StatusChip tone="review">Awaiting review</StatusChip>
+            </div>
           </div>
-          <p className="text-mist">
-            Your order shipped on Monday and is due Thursday. Here&apos;s the tracking
-            link…
+
+          <p className="text-sm text-bone leading-relaxed">
+            Your package is on its way and should arrive within the delivery window in our shipping policy. Here is your tracking link.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <Button size="sm">Approve and send</Button>
+
+          <div className="flex items-center gap-2 pt-1 border-t border-line">
+            <Button size="sm" className="gap-1.5">
+              <Check className="size-3.5" />
+              Approve and send
+            </Button>
             <Button size="sm" variant="secondary">
-              Edit
+              Edit draft
             </Button>
           </div>
         </div>
       </div>
-      <figcaption className="px-2 text-base text-mist-dim">
-        AI drafts the reply. Your team approves it.
-      </figcaption>
-    </figure>
+    </div>
   );
 }

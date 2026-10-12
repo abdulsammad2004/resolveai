@@ -21,13 +21,20 @@ dependencies = [
     "argon2-cffi",
     "pyjwt",
     "email-validator",
+    "arq",
+    "openai",
+    "httpx",
+    "tiktoken",
+    "pypdf",
+    "python-docx",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "jsonschema",
     "pytest",
     "pytest-asyncio",
-    "httpx",
     "ruff",
 ]
 

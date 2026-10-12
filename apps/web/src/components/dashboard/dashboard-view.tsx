@@ -1,13 +1,14 @@
 "use client";
 
-import { BookOpen } from "lucide-react";
 import Link from "next/link";
 
-import { EmptyState } from "@/components/empty-state";
-import { GlassPanel } from "@/components/glass-panel";
+import { SetupProgress } from "@/components/dashboard/setup-progress";
+import { EmptyIllustration } from "@/components/empty-illustration";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, roleLabel, roleTone } from "@/components/status-chip";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useConversationCounts, useDocuments, useTicketCounts } from "@/lib/api/queries";
 import { useAuth } from "@/lib/auth/auth-provider";
 
 function greeting(date = new Date()): string {
@@ -17,73 +18,127 @@ function greeting(date = new Date()): string {
   return "Good evening";
 }
 
-const STATS = [
-  {
-    label: "Open tickets",
-    hint: "Customer conversations that still need a reply will be counted here.",
-    accent: "text-mist",
-  },
-  {
-    label: "Awaiting review",
-    hint: "AI drafts and actions waiting for someone on your team to approve them.",
-    accent: "text-amber",
-  },
-  {
-    label: "Documents",
-    hint: "Help articles and policies the assistant can cite when it drafts a reply.",
-    accent: "text-mist",
-  },
-] as const;
-
 export function DashboardView() {
   const { user, workspace, role } = useAuth();
+  // Same query (and cache entry) as the knowledge page and the setup ring: one fetch.
+  const documents = useDocuments();
+  const conversationCounts = useConversationCounts();
+  const ticketCounts = useTicketCounts();
+  const readyCount = documents.data?.filter((d) => d.status === "ready").length;
+  const settlingCount =
+    documents.data?.filter((d) => d.status === "uploaded" || d.status === "processing").length ?? 0;
+
   if (!user || !workspace || !role) return null;
   const firstName = user.full_name.trim().split(/\s+/)[0];
 
+  const urgentOpen = ticketCounts.data?.urgent_open ?? 0;
+  // Approvals have no API yet, so their real count is 0.
+  const stats = [
+    {
+      label: "Open tickets",
+      value: ticketCounts.data?.open ?? (ticketCounts.isError ? null : 0),
+      loading: ticketCounts.isPending,
+      error: "Couldn't load tickets. Refresh to try again.",
+      href: "/tickets",
+      linkLabel: "Open the inbox",
+      urgent: urgentOpen,
+      hint:
+        urgentOpen > 0
+          ? undefined
+          : "Requests that need a person. None of the open ones are urgent.",
+    },
+    {
+      label: "Conversations needing a person",
+      value: conversationCounts.data?.needs_human ?? (conversationCounts.isError ? null : 0),
+      loading: conversationCounts.isPending,
+      error: "Couldn't load conversations. Refresh to try again.",
+      href: "/conversations",
+      linkLabel: "View conversations",
+      hint: "Widget chats the assistant couldn't answer from your docs.",
+    },
+    {
+      label: "Awaiting review",
+      value: 0 as number | null,
+      loading: false,
+      hint: "Drafts and actions waiting for a person to approve them will be counted here.",
+    },
+    {
+      label: "Documents ready",
+      value: readyCount ?? (documents.isError ? null : 0),
+      loading: documents.isPending,
+      error: "Couldn't load documents. Refresh to try again.",
+      hint:
+        settlingCount > 0
+          ? `${settlingCount} more ${settlingCount === 1 ? "is" : "are"} still processing.`
+          : "Help articles and policies the assistant can cite in its drafts.",
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6 max-w-7xl mx-auto">
       <PageHeader
         title={`${greeting()}, ${firstName}`}
         description={
           <p className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span>
-              You&apos;re working in <span className="font-medium text-mist">{workspace.name}</span>
+              You&apos;re working in <span className="font-semibold text-bone">{workspace.name}</span>
             </span>
             <StatusChip tone={roleTone[role]}>{roleLabel[role]}</StatusChip>
           </p>
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {STATS.map((stat) => (
-          <GlassPanel key={stat.label} className="flex flex-col gap-3">
-            <h2 className="flex items-center gap-2 font-sans text-base font-medium tracking-normal text-mist-dim">
-              {stat.label === "Awaiting review" && (
-                <span className="size-2 rounded-full bg-amber" aria-hidden />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map((stat) => (
+          <Card key={stat.label} className="flex flex-col justify-between">
+            <CardHeader className="pb-2">
+              <span className="text-sm text-ash font-medium">{stat.label}</span>
+              {stat.loading ? (
+                <Skeleton className="mt-2 h-12 w-16" />
+              ) : (
+                <p className="font-display text-5xl sm:text-6xl font-black tracking-tight text-bone pt-1">
+                  {stat.value ?? "–"}
+                </p>
               )}
-              {stat.label}
-            </h2>
-            <p className={`font-heading text-3xl font-semibold ${stat.accent}`}>
-              <span aria-hidden>—</span>
-              <span className="sr-only">No data yet</span>
-            </p>
-            <p className="text-sm text-mist-dim">{stat.hint}</p>
-          </GlassPanel>
+            </CardHeader>
+            <CardContent>
+              {stat.value !== null && stat.urgent !== undefined && stat.urgent > 0 && (
+                <p className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-urgent">
+                  <span className="size-1.5 rounded-full bg-urgent" aria-hidden />
+                  {stat.urgent} urgent
+                </p>
+              )}
+              <p className="text-xs text-ash leading-relaxed">
+                {stat.value === null ? stat.error : stat.hint}
+              </p>
+              {stat.href && (
+                <Link
+                  href={stat.href}
+                  className="mt-2 inline-block text-xs font-medium text-ion underline-offset-4 hover:underline"
+                >
+                  {stat.linkLabel}
+                </Link>
+              )}
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      <EmptyState
-        icon={BookOpen}
-        title="Add your first documents so the assistant can answer questions"
-        action={
-          <Button asChild>
-            <Link href="/knowledge">Add documents</Link>
-          </Button>
-        }
-      >
-        The assistant only answers from your own help articles and policies, and hands anything it
-        can&apos;t ground to a person on your team.
-      </EmptyState>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2 flex flex-col">
+          <CardHeader className="pb-3 border-b border-line">
+            <CardTitle className="text-lg">Activity</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
+            <EmptyIllustration kind="activity" className="size-20" />
+            <p className="max-w-sm text-sm text-ash">
+              Activity from your team and the assistant will show up here.
+            </p>
+          </CardContent>
+        </Card>
+
+        <SetupProgress />
+      </div>
     </div>
   );
 }

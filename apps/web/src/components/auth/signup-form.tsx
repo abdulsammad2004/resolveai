@@ -46,7 +46,6 @@ export function SignupForm() {
   async function onSubmit(values: SignupValues) {
     setFormError(null);
     try {
-      // On success the (auth) layout redirects to the dashboard.
       await signup(values);
     } catch (err) {
       setFormError({
@@ -57,14 +56,18 @@ export function SignupForm() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold sm:text-3xl">Set up your support workspace</h1>
-        <p className="text-mist-dim">You&apos;ll be the owner. Invite your team once you&apos;re in.</p>
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-4xl sm:text-5xl font-black tracking-tight text-bone">
+          Create Workspace
+        </h1>
+        <p className="text-sm text-ash">
+          You&apos;ll be the owner. Invite your team agents once you&apos;re inside.
+        </p>
       </header>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
+        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
           <FormField
             control={form.control}
             name="full_name"
@@ -72,7 +75,7 @@ export function SignupForm() {
               <FormItem>
                 <FormLabel>Full name</FormLabel>
                 <FormControl>
-                  <Input autoComplete="name" {...field} />
+                  <Input autoComplete="name" placeholder="Alex Morgan" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -85,7 +88,7 @@ export function SignupForm() {
               <FormItem>
                 <FormLabel>Work email</FormLabel>
                 <FormControl>
-                  <Input type="email" autoComplete="email" {...field} />
+                  <Input type="email" placeholder="alex@company.com" autoComplete="email" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -98,7 +101,7 @@ export function SignupForm() {
               <FormItem>
                 <FormLabel>Password</FormLabel>
                 <FormControl>
-                  <Input type="password" autoComplete="new-password" {...field} />
+                  <Input type="password" placeholder="••••••••" autoComplete="new-password" {...field} />
                 </FormControl>
                 <FormDescription>At least 8 characters.</FormDescription>
                 <FormMessage />
@@ -124,7 +127,7 @@ export function SignupForm() {
               {formError.emailTaken ? (
                 <>
                   That email is already registered.{" "}
-                  <Link href="/login" className="font-medium text-seafoam underline underline-offset-4">
+                  <Link href="/login" className="font-semibold text-ion underline underline-offset-4">
                     Log in instead.
                   </Link>
                 </>
@@ -134,15 +137,15 @@ export function SignupForm() {
             </FormError>
           )}
 
-          <Button type="submit" size="lg" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? "Creating workspace…" : "Create workspace"}
+          <Button type="submit" size="lg" className="mt-2 w-full" disabled={form.formState.isSubmitting}>
+            {form.formState.isSubmitting ? "Creating workspace…" : "Get started"}
           </Button>
         </form>
       </Form>
 
-      <p className="text-mist-dim">
+      <p className="text-sm text-ash">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-seafoam underline-offset-4 hover:underline">
+        <Link href="/login" className="font-semibold text-ion underline-offset-4 hover:underline">
           Log in
         </Link>
       </p>

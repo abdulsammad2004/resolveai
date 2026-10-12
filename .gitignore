@@ -28,6 +28,9 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Uploaded documents (local storage backend)
+services/api/storage/
+
 # Docker volumes and data folders
 /data/
 docker-data/

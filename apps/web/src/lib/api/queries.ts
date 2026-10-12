@@ -1,11 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/lib/auth/auth-provider";
-import { patchSessionWorkspace } from "@/lib/auth/session-store";
-import { api } from "./client";
-import { toApiError } from "./errors";
+import { clearSession, getAccessToken, patchSessionWorkspace } from "@/lib/auth/session-store";
+import { api, refreshSession } from "./client";
+import { ApiError, toApiError } from "./errors";
 import type { components } from "./schema";
 
 export type WorkspaceWithRole = components["schemas"]["WorkspaceWithRole"];
@@ -13,11 +13,58 @@ export type WorkspaceSettings = components["schemas"]["WorkspaceSettingsOut"];
 export type WorkspaceSettingsUpdate = components["schemas"]["WorkspaceSettingsUpdate"];
 export type Member = components["schemas"]["MemberOut"];
 
+export type DocumentItem = components["schemas"]["DocumentOut"];
+export type DocumentStatus = components["schemas"]["DocumentStatus"];
+export type SearchResult = components["schemas"]["SearchResult"];
+export type SearchResponse = components["schemas"]["SearchResponse"];
+
+export type ConversationSummary = components["schemas"]["ConversationSummary"];
+export type ConversationDetail = components["schemas"]["ConversationDetail"];
+export type ConversationPage = components["schemas"]["ConversationPage"];
+export type ConversationStatus = ConversationSummary["status"];
+
+export type TicketSummary = components["schemas"]["TicketSummary"];
+export type TicketDetail = components["schemas"]["TicketDetail"];
+export type TicketPage = components["schemas"]["TicketPage"];
+export type TicketCreate = components["schemas"]["TicketCreate"];
+export type TicketUpdate = components["schemas"]["TicketUpdate"];
+export type TicketStatus = TicketSummary["status"];
+export type TicketPriority = TicketSummary["priority"];
+export type TicketIntent = TicketSummary["intent"];
+export type Classification = components["schemas"]["ClassificationOut"];
+export type MockOrder = components["schemas"]["MockOrderOut"];
+export type ReplyDraft = components["schemas"]["ReplyDraftOut"];
+export type ProposedAction = components["schemas"]["ActionRequestOut"];
+export type ActionListItem = components["schemas"]["ActionListItem"];
+export type ActionStatus = ProposedAction["status"];
+export type ToolCallRecord = components["schemas"]["ToolCallOut"];
+
+const DOCUMENTS_PAGE_SIZE = 100;
+const DOCUMENTS_MAX_PAGES = 50;
+
 // Every key starts with the active workspace id so cached data never crosses tenants.
 export const queryKeys = {
   workspaces: (wid: string) => [wid, "workspaces"] as const,
   settings: (wid: string) => [wid, "workspace-settings"] as const,
   members: (wid: string) => [wid, "members"] as const,
+  documents: (wid: string) => [wid, "documents"] as const,
+  conversations: (wid: string) => [wid, "conversations"] as const,
+  conversationList: (wid: string, status: ConversationStatus | "all") =>
+    [wid, "conversations", "list", status] as const,
+  conversation: (wid: string, id: string) => [wid, "conversations", "detail", id] as const,
+  tickets: (wid: string) => [wid, "tickets"] as const,
+  ticketList: (wid: string, filters: TicketFilters) => [wid, "tickets", "list", filters] as const,
+  ticket: (wid: string, id: string) => [wid, "tickets", "detail", id] as const,
+  mockOrders: (wid: string) => [wid, "mock-orders"] as const,
+  actions: (wid: string) => [wid, "actions"] as const,
+  actionList: (wid: string, status: ActionStatus | "all") =>
+    [wid, "actions", "list", status] as const,
+};
+
+export type TicketFilters = {
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  assignee: "me" | "any";
 };
 
 function useWorkspaceId(): string {
@@ -88,6 +135,414 @@ export function useMembers() {
       const { data, error, response } = await api.GET("/api/v1/members");
       if (!data) throw toApiError(error, response);
       return data;
+    },
+  });
+}
+
+const DOCUMENTS_POLL_MS = 2000;
+
+function isSettling(status: DocumentStatus): boolean {
+  return status === "uploaded" || status === "processing";
+}
+
+/**
+ * Every document in the workspace, following next_cursor until the last page.
+ * Shared by the knowledge page and the dashboard (same key, one fetch). Polls every 2s
+ * only while a document is still uploaded or processing.
+ */
+export function useDocuments() {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.documents(wid),
+    queryFn: async (): Promise<DocumentItem[]> => {
+      const items: DocumentItem[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < DOCUMENTS_MAX_PAGES; page++) {
+        const { data, error, response } = await api.GET("/api/v1/documents", {
+          params: { query: { limit: DOCUMENTS_PAGE_SIZE, cursor } },
+        });
+        if (!data) throw toApiError(error, response);
+        items.push(...data.items);
+        if (!data.next_cursor) break;
+        cursor = data.next_cursor;
+      }
+      return items;
+    },
+    refetchInterval: (query) =>
+      query.state.data?.some((d) => isSettling(d.status)) ? DOCUMENTS_POLL_MS : false,
+  });
+}
+
+/** Replace or insert one document in the cached list (newest first). */
+function upsertDocument(list: DocumentItem[] | undefined, doc: DocumentItem): DocumentItem[] {
+  if (!list) return [doc];
+  return list.some((d) => d.id === doc.id)
+    ? list.map((d) => (d.id === doc.id ? doc : d))
+    : [doc, ...list];
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/*
+ * Multipart upload over XHR so the UI can show real progress (fetch has no upload
+ * progress events). Mirrors the API client's auth: one refresh-and-retry on 401.
+ */
+function sendUpload(
+  file: File,
+  token: string | null,
+  onProgress: (fraction: number) => void,
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/documents");
+    xhr.withCredentials = true;
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => resolve({ status: xhr.status, body: parseJson(xhr.responseText) });
+    // Network failure: surfaced by errorMessage() as "can't reach ResolveAI".
+    xhr.onerror = () => reject(new TypeError("Network request failed"));
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+}
+
+export function useUploadDocument() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      file,
+      onProgress,
+    }: {
+      file: File;
+      onProgress: (fraction: number) => void;
+    }): Promise<DocumentItem> => {
+      let result = await sendUpload(file, getAccessToken(), onProgress);
+      if (result.status === 401) {
+        const refreshed = await refreshSession();
+        if (!refreshed) {
+          clearSession();
+          throw new ApiError("Your session has ended. Log in again.", 401);
+        }
+        onProgress(0);
+        result = await sendUpload(file, refreshed.accessToken, onProgress);
+      }
+      if (result.status !== 202) {
+        throw toApiError(result.body, { status: result.status } as Response);
+      }
+      return result.body as DocumentItem;
+    },
+    onSuccess: (doc) => {
+      queryClient.setQueryData<DocumentItem[]>(queryKeys.documents(wid), (list) =>
+        upsertDocument(list, doc),
+      );
+    },
+  });
+}
+
+export function useReindexDocument() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error, response } = await api.POST(
+        "/api/v1/documents/{document_id}/reindex",
+        { params: { path: { document_id: id } } },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (doc) => {
+      queryClient.setQueryData<DocumentItem[]>(queryKeys.documents(wid), (list) =>
+        upsertDocument(list, doc),
+      );
+    },
+  });
+}
+
+export function useDeleteDocument() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error, response } = await api.DELETE("/api/v1/documents/{document_id}", {
+        params: { path: { document_id: id } },
+      });
+      if (!response.ok) throw toApiError(error, response);
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData<DocumentItem[]>(queryKeys.documents(wid), (list) =>
+        list?.filter((d) => d.id !== id),
+      );
+    },
+  });
+}
+
+/** Semantic search over ready documents. A mutation: it runs when the user submits. */
+export function useKnowledgeSearch() {
+  return useMutation({
+    mutationFn: async (query: string): Promise<SearchResponse> => {
+      const { data, error, response } = await api.POST("/api/v1/knowledge/search", {
+        body: { query },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+  });
+}
+
+const CONVERSATIONS_PAGE_SIZE = 25;
+const CONVERSATIONS_POLL_MS = 10_000;
+
+/** Inbox pages (newest activity first), polled so new widget chats show up on their own. */
+export function useConversations(status: ConversationStatus | "all") {
+  const wid = useWorkspaceId();
+  return useInfiniteQuery({
+    queryKey: queryKeys.conversationList(wid, status),
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }): Promise<ConversationPage> => {
+      const { data, error, response } = await api.GET("/api/v1/conversations", {
+        params: {
+          query: {
+            limit: CONVERSATIONS_PAGE_SIZE,
+            cursor: pageParam,
+            status: status === "all" ? undefined : status,
+          },
+        },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: CONVERSATIONS_POLL_MS,
+  });
+}
+
+/** Counts per status (from a one-item page); used by the dashboard tile. */
+export function useConversationCounts() {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: [...queryKeys.conversations(wid), "counts"] as const,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/v1/conversations", {
+        params: { query: { limit: 1 } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data.counts;
+    },
+    refetchInterval: CONVERSATIONS_POLL_MS,
+  });
+}
+
+export function useConversation(id: string | null) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.conversation(wid, id ?? "none"),
+    enabled: id !== null,
+    queryFn: async (): Promise<ConversationDetail> => {
+      const { data, error, response } = await api.GET("/api/v1/conversations/{conversation_id}", {
+        params: { path: { conversation_id: id ?? "" } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    refetchInterval: CONVERSATIONS_POLL_MS,
+  });
+}
+
+export function useUpdateConversationStatus() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: ConversationStatus }) => {
+      const { data, error, response } = await api.PATCH("/api/v1/conversations/{conversation_id}", {
+        params: { path: { conversation_id: id } },
+        body: { status },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData(queryKeys.conversation(wid, detail.id), detail);
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations(wid) });
+    },
+  });
+}
+
+const TICKETS_PAGE_SIZE = 25;
+const TICKETS_POLL_MS = 10_000;
+// While a reply draft is being written in the background.
+const DRAFT_POLL_MS = 3_000;
+
+/** Inbox pages: urgent first, then newest. Polled so widget handoffs appear on their own. */
+export function useTickets(filters: TicketFilters) {
+  const wid = useWorkspaceId();
+  return useInfiniteQuery({
+    queryKey: queryKeys.ticketList(wid, filters),
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }): Promise<TicketPage> => {
+      const { data, error, response } = await api.GET("/api/v1/tickets", {
+        params: {
+          query: {
+            limit: TICKETS_PAGE_SIZE,
+            cursor: pageParam,
+            status: filters.status,
+            priority: filters.priority,
+            assignee: filters.assignee,
+          },
+        },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: TICKETS_POLL_MS,
+  });
+}
+
+/** Workspace-wide ticket counts (from a one-item page); used by the dashboard. */
+export function useTicketCounts() {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: [...queryKeys.tickets(wid), "counts"] as const,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/v1/tickets", {
+        params: { query: { limit: 1 } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data.counts;
+    },
+    refetchInterval: TICKETS_POLL_MS,
+  });
+}
+
+/** One ticket. Polls faster while `awaitingDraft` says a reply draft is being written. */
+export function useTicket(
+  id: string | null,
+  { awaitingDraft }: { awaitingDraft?: (ticket: TicketDetail) => boolean } = {},
+) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.ticket(wid, id ?? "none"),
+    enabled: id !== null,
+    queryFn: async (): Promise<TicketDetail> => {
+      const { data, error, response } = await api.GET("/api/v1/tickets/{ticket_id}", {
+        params: { path: { ticket_id: id ?? "" } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    refetchInterval: (query) =>
+      query.state.data && awaitingDraft?.(query.state.data) ? DRAFT_POLL_MS : TICKETS_POLL_MS,
+  });
+}
+
+/** Ask for a fresh AI draft. It is written in the background; poll the ticket for it. */
+export function useRegenerateDraft() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error, response } = await api.POST(
+        "/api/v1/tickets/{ticket_id}/regenerate-draft",
+        { params: { path: { ticket_id: id } } },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.ticket(wid, result.ticket_id) });
+    },
+  });
+}
+
+const ACTIONS_POLL_MS = 10_000;
+
+/** Actions the AI proposed across all tickets, newest first (the Approvals page). */
+export function useActions(status: ActionStatus | "all" = "proposed") {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.actionList(wid, status),
+    queryFn: async (): Promise<ActionListItem[]> => {
+      const { data, error, response } = await api.GET("/api/v1/actions", {
+        params: { query: { status: status === "all" ? undefined : status } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data.items;
+    },
+    refetchInterval: ACTIONS_POLL_MS,
+  });
+}
+
+export function useCreateTicket() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: TicketCreate) => {
+      const { data, error, response } = await api.POST("/api/v1/tickets", { body });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (ticket) => {
+      queryClient.setQueryData(queryKeys.ticket(wid, ticket.id), ticket);
+      queryClient.invalidateQueries({ queryKey: queryKeys.tickets(wid) });
+    },
+  });
+}
+
+export function useUpdateTicket() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, changes }: { id: string; changes: TicketUpdate }) => {
+      const { data, error, response } = await api.PATCH("/api/v1/tickets/{ticket_id}", {
+        params: { path: { ticket_id: id } },
+        body: changes,
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (ticket) => {
+      queryClient.setQueryData(queryKeys.ticket(wid, ticket.id), ticket);
+      queryClient.invalidateQueries({ queryKey: queryKeys.tickets(wid) });
+    },
+  });
+}
+
+export function useMockOrders(enabled: boolean) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.mockOrders(wid),
+    enabled,
+    queryFn: async (): Promise<MockOrder[]> => {
+      const { data, error, response } = await api.GET("/api/v1/mock-orders");
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+  });
+}
+
+export function useSeedMockOrders() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error, response } = await api.POST("/api/v1/mock-orders/seed");
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(queryKeys.mockOrders(wid), result.orders);
     },
   });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Building2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { errorMessage } from "@/lib/api/errors";
 import { useCreateWorkspace, useWorkspaces } from "@/lib/api/queries";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -44,7 +45,7 @@ export function WorkspaceSwitcher() {
     if (id === workspace?.id) return;
     try {
       await switchWorkspace(id);
-      toast.success(`You're now working in ${name}.`);
+      toast.success(`Switched to ${name}`);
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -60,29 +61,33 @@ export function WorkspaceSwitcher() {
       <DropdownMenu>
         <DropdownMenuTrigger
           ref={triggerRef}
-          className="glass glass-interactive pressable flex h-11 max-w-full min-w-0 items-center gap-3 rounded-card px-3.5 text-left"
+          className="pressable flex h-9 max-w-full min-w-0 items-center gap-2.5 rounded-[6px] border border-line bg-carbon-elevated px-3 text-left text-sm text-bone hover:border-white/20 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ion"
         >
-          <span className="min-w-0">
-            <span className="block truncate font-medium text-mist">{workspace.name}</span>
-          </span>
-          <span className="hidden text-sm text-mist-dim sm:inline">{roleLabel[role]}</span>
-          <ChevronsUpDown className="size-4 shrink-0 text-mist-dim" aria-hidden />
+          <Building2 className="size-3.5 shrink-0 text-ash" aria-hidden />
+          <span className="min-w-0 truncate font-medium">{workspace.name}</span>
+          <span className="hidden text-xs text-ash sm:inline">({roleLabel[role]})</span>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-ash" aria-hidden />
           <span className="sr-only">Switch workspace</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent
+          align="start"
           className="w-72"
           onCloseAutoFocus={(event) => {
-            // Let the create form take focus instead of the trigger.
             if (openingCreate.current) {
               event.preventDefault();
               openingCreate.current = false;
             }
           }}
         >
-          <DropdownMenuLabel>Your workspaces</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs text-ash">
+            Your workspaces
+          </DropdownMenuLabel>
           <DropdownMenuGroup>
             {workspaces.isPending && (
-              <DropdownMenuItem disabled>Loading workspaces…</DropdownMenuItem>
+              <div aria-busy="true" aria-label="Loading workspaces" className="flex flex-col gap-2 px-3 py-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
             )}
             {workspaces.isError && (
               <DropdownMenuItem disabled>Couldn&apos;t load your workspaces.</DropdownMenuItem>
@@ -94,12 +99,13 @@ export function WorkspaceSwitcher() {
                   key={ws.id}
                   onSelect={() => void handleSwitch(ws.id, ws.name)}
                   aria-current={current ? "true" : undefined}
+                  className="flex items-center justify-between"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate">{ws.name}</span>
-                    <span className="block text-sm text-mist-dim">{roleLabel[ws.role]}</span>
+                    <span className="block truncate font-medium text-bone">{ws.name}</span>
+                    <span className="block text-xs text-ash">{roleLabel[ws.role]}</span>
                   </span>
-                  {current && <Check className="text-seafoam" aria-label="Current workspace" />}
+                  {current && <Check className="size-4 text-ion" aria-label="Current workspace" />}
                 </DropdownMenuItem>
               );
             })}
@@ -111,7 +117,7 @@ export function WorkspaceSwitcher() {
               setCreating(true);
             }}
           >
-            <Plus aria-hidden />
+            <Plus className="size-4 mr-2" aria-hidden />
             Create workspace
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -138,7 +144,7 @@ function CreateWorkspacePanel({ onClose }: { onClose: () => void }) {
     try {
       const created = await createWorkspace.mutateAsync(name);
       await switchWorkspace(created.id);
-      toast.success(`${created.name} is ready. You're now working in it.`);
+      toast.success(`${created.name} created and active.`);
       onClose();
     } catch (err) {
       form.setError("name", { message: errorMessage(err) });
@@ -149,12 +155,12 @@ function CreateWorkspacePanel({ onClose }: { onClose: () => void }) {
     <div
       role="dialog"
       aria-labelledby="create-workspace-title"
-      className="glass-elevated absolute top-full left-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-card p-5 duration-150 animate-in fade-in-0"
+      className="absolute top-full left-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-panel border border-line bg-carbon-elevated p-5 shadow-2xl duration-150 animate-in fade-in-0"
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose();
       }}
     >
-      <h2 id="create-workspace-title" className="mb-4 text-lg font-semibold">
+      <h2 id="create-workspace-title" className="mb-4 text-base font-semibold text-bone">
         New workspace
       </h2>
       <Form {...form}>
@@ -172,7 +178,7 @@ function CreateWorkspacePanel({ onClose }: { onClose: () => void }) {
               </FormItem>
             )}
           />
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? "Creating…" : "Create workspace"}
             </Button>

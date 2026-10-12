@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import Link from "next/link";
 
 import { ProductPreview } from "@/components/auth/product-preview";
 import { FullPageLoader } from "@/components/full-page-loader";
@@ -24,14 +25,18 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <main className="mx-auto grid min-h-dvh w-full max-w-[1240px] grid-cols-[minmax(0,1fr)] items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-12 lg:px-10">
-      <div className="glass flex w-full flex-col gap-8 rounded-panel p-6 sm:p-8">
-        <Logo />
-        {children}
-      </div>
-      <div className="hidden justify-center lg:flex">
-        <ProductPreview />
-      </div>
-    </main>
+    <div className="min-h-screen bg-ink text-bone flex flex-col justify-center selection:bg-ion selection:text-bone">
+      <main className="mx-auto grid min-h-dvh w-full max-w-[1240px] grid-cols-1 items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-16 lg:px-10">
+        <div className="flex w-full flex-col gap-8 rounded-panel border border-line bg-carbon p-6 sm:p-10 shadow-2xl">
+          <Link href="/" className="inline-block transition-opacity hover:opacity-90">
+            <Logo />
+          </Link>
+          {children}
+        </div>
+        <div className="hidden justify-center lg:flex">
+          <ProductPreview />
+        </div>
+      </main>
+    </div>
   );
 }

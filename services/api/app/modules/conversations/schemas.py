@@ -1,0 +1,178 @@
+import uuid
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+ConversationStatusLiteral = Literal["open", "needs_human", "closed"]
+RatingLiteral = Literal["up", "down"]
+RoleLiteral = Literal["customer", "assistant", "agent", "system"]
+RouteLiteral = Literal["answer", "fallback", "small_talk", "handoff", "agent"]
+# Team replies: sent unchanged from an AI draft, from an edited AI draft, or written by a
+# teammate from scratch.
+AuthoredByLiteral = Literal["ai_draft", "ai_draft_edited", "human"]
+
+
+class Citation(BaseModel):
+    source_id: str
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    title: str
+    heading_path: list[str]
+    snippet: str = ""
+
+
+# Widget ---------------------------------------------------------------------------------
+
+
+class WidgetSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    public_key: str = Field(min_length=1, max_length=64)
+    conversation_id: uuid.UUID | None = None
+    anonymous_id: str | None = Field(
+        default=None, min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
+    )
+    # The embedding page's origin, as reported to the iframe by the browser (postMessage
+    # event.origin). Omitted when the widget page is opened directly.
+    host_origin: str | None = Field(default=None, max_length=255)
+
+
+class WidgetSessionResponse(BaseModel):
+    token: str
+    expires_in: int
+    conversation_id: uuid.UUID
+    anonymous_id: str
+    workspace_name: str
+
+
+class WidgetMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class WidgetMessageOut(BaseModel):
+    id: uuid.UUID
+    role: RoleLiteral
+    content: str
+    citations: list[Citation]
+    grounded: bool | None
+    route: RouteLiteral | None = None
+    # Tools the agent ran for this reply, e.g. ["get_order_status"].
+    tools_used: list[str] = []
+    created_at: datetime
+    rating: RatingLiteral | None = None
+
+
+class WidgetConversationOut(BaseModel):
+    id: uuid.UUID
+    # closed: read-only. The widget starts a new conversation when the visitor writes again.
+    status: ConversationStatusLiteral
+    closed_at: datetime | None = None
+    # Closed because its ticket was resolved (shows "Still need help?" and the rating).
+    resolved: bool = False
+    resolution_rating: RatingLiteral | None = None
+    messages: list[WidgetMessageOut]
+
+
+class ResolutionFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: RatingLiteral
+
+
+class WidgetFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: uuid.UUID
+    rating: RatingLiteral
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class FeedbackOut(BaseModel):
+    message_id: uuid.UUID
+    rating: RatingLiteral
+    comment: str | None
+    created_at: datetime
+
+
+class FinalEvent(BaseModel):
+    """Payload of the SSE `final` event: the authoritative assistant message."""
+
+    id: uuid.UUID
+    content: str
+    citations: list[Citation]
+    grounded: bool | None
+    route: RouteLiteral
+    tools_used: list[str] = []
+
+
+# Dashboard ------------------------------------------------------------------------------
+
+
+class ContactOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str | None
+    email: str | None
+    anonymous_id: str
+
+
+class ConversationSummary(BaseModel):
+    id: uuid.UUID
+    status: ConversationStatusLiteral
+    channel: str
+    contact: ContactOut
+    last_message_at: datetime | None
+    last_message_preview: str | None
+    last_message_role: RoleLiteral | None
+    created_at: datetime
+
+
+class ConversationCounts(BaseModel):
+    open: int
+    needs_human: int
+    closed: int
+
+
+class ConversationPage(BaseModel):
+    items: list[ConversationSummary]
+    next_cursor: str | None
+    counts: ConversationCounts
+
+
+class MessageOut(BaseModel):
+    id: uuid.UUID
+    role: RoleLiteral
+    content: str
+    citations: list[Citation]
+    grounded: bool | None
+    route: RouteLiteral | None = None
+    tools_used: list[str] = []
+    # Customer messages: how the message was classified (dashboard only, never the widget).
+    classification: dict[str, Any] | None = None
+    prompt_version: str | None
+    created_at: datetime
+    feedback: FeedbackOut | None = None
+    # Agent messages only (dashboard only, never the widget).
+    authored_by: AuthoredByLiteral | None = None
+    author_name: str | None = None
+
+
+class ConversationDetail(BaseModel):
+    id: uuid.UUID
+    status: ConversationStatusLiteral
+    channel: str
+    ticket_id: uuid.UUID | None = None
+    contact: ContactOut
+    last_message_at: datetime | None
+    created_at: datetime
+    messages: list[MessageOut]
+
+
+class ConversationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: ConversationStatusLiteral
