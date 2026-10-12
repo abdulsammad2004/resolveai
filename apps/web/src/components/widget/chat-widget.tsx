@@ -29,6 +29,7 @@ import {
   HOST_MESSAGE_SOURCE,
   WIDGET_MESSAGE_SOURCE,
   WidgetError,
+  rateLimitNotice,
   createSession,
   fetchConversation,
   loadStoredSession,
@@ -119,7 +120,8 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
   // What the assistant is checking before it answers, e.g. "Checking your order…".
   const [activity, setActivity] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [rateLimited, setRateLimited] = useState<string | null>(null);
+  // A 429 from any widget call: a friendly banner that clears once Retry-After has passed.
+  const [rateLimited, setRateLimited] = useState<{ message: string; seconds: number } | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
   const session = useRef<StoredSession | null>(null);
@@ -173,10 +175,13 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
       setPhase({ kind: "ready" });
     } catch (error) {
       const blocked = blockedMessage(error);
+      const limited = rateLimitNotice(error);
       setPhase(
         blocked
           ? { kind: "blocked", message: blocked }
-          : { kind: "offline", message: "We couldn't connect to the chat. Check your connection." },
+          : limited
+            ? { kind: "offline", message: limited.message }
+            : { kind: "offline", message: "We couldn't connect to the chat. Check your connection." },
       );
     }
   }, [publicKey, openSession]);
@@ -293,7 +298,8 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
       setRateLimited(null);
       setAnnouncement("Started a new chat.");
       inputRef.current?.focus();
-    } catch {
+    } catch (error) {
+      if (showRateLimit(error)) return;
       setAnnouncement("We couldn't start a new chat. Check your connection and try again.");
     } finally {
       setStartingNew(false);
@@ -308,7 +314,8 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
       setClosure(closureOf(conversation));
       setAnnouncement("Reopened. A teammate will pick this up; tell us what you still need.");
       inputRef.current?.focus();
-    } catch {
+    } catch (error) {
+      if (showRateLimit(error)) return;
       setAnnouncement("We couldn't reopen this conversation. Try again.");
     } finally {
       setReopening(false);
@@ -321,8 +328,9 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
     try {
       setClosure(closureOf(await rateResolution(await validToken(), rating)));
       setAnnouncement("Thanks for the feedback.");
-    } catch {
+    } catch (error) {
       setClosure(previous);
+      if (showRateLimit(error)) return;
       setAnnouncement("Your feedback couldn't be saved. Try again.");
     }
   }
@@ -341,9 +349,18 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
 
   useEffect(() => {
     if (!rateLimited) return;
-    const timer = window.setTimeout(() => setRateLimited(null), 30_000);
+    const timer = window.setTimeout(() => setRateLimited(null), rateLimited.seconds * 1000);
     return () => window.clearTimeout(timer);
   }, [rateLimited]);
+
+  /** Show the friendly "slow down" banner for a 429; false for any other error. */
+  function showRateLimit(error: unknown): boolean {
+    const notice = rateLimitNotice(error);
+    if (!notice) return false;
+    setRateLimited(notice);
+    setAnnouncement(notice.message);
+    return true;
+  }
 
   /* Sending ------------------------------------------------------------------------------ */
 
@@ -371,7 +388,11 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
     if (closure) {
       try {
         freshToken = await startFresh();
-      } catch {
+      } catch (error) {
+        if (showRateLimit(error)) {
+          setDraft(text);
+          return;
+        }
         setFailure({ content: text, message: "We couldn't start a new chat. Check your connection and try again." });
         return;
       }
@@ -428,14 +449,13 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
       ]);
       setAnnouncement(`Answer: ${answer.content.replace(/\[S\d+\]/g, "")}`);
     } catch (error) {
-      if (error instanceof WidgetError && error.status === 429) {
+      if (rateLimitNotice(error)) {
         // Nothing was stored: take the message back so it can be sent again.
         if (!retry) {
           setMessages((list) => list.filter((m) => m.id !== localId));
           setDraft(text);
         }
-        setRateLimited(error.message);
-        setAnnouncement(error.message);
+        showRateLimit(error);
       } else {
         const message =
           error instanceof WidgetError && error.message
@@ -469,10 +489,11 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
     try {
       await sendFeedback(await validToken(), messageId, rating);
       setAnnouncement("Thanks for the feedback.");
-    } catch {
+    } catch (error) {
       setMessages((list) =>
         list.map((m) => (m.id === messageId ? { ...m, rating: previous } : m)),
       );
+      if (showRateLimit(error)) return;
       setAnnouncement("Your feedback couldn't be saved. Try again.");
     }
   }
@@ -720,7 +741,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
                 className="mb-2 flex items-start gap-2 rounded-[6px] border border-review/25 bg-review/10 px-3 py-2 text-xs text-bone"
               >
                 <Hourglass className="mt-0.5 size-3.5 shrink-0 text-review" aria-hidden />
-                {rateLimited}
+                {rateLimited.message}
               </p>
             )}
             <div className="flex items-end gap-2">

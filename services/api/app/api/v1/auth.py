@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Response, status
+from fastapi import APIRouter, Cookie, Request, Response, status
 
 from app.core.config import get_settings
 from app.core.deps import CurrentPrincipal, DBSession, TenantDB
+from app.core.ratelimit import Limiter, client_ip, email_key, enforce
 from app.modules.auth import service
 from app.modules.auth.schemas import (
     AuthResponse,
@@ -22,6 +23,8 @@ REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 RefreshCookie = Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)]
+
+AUTH_RATE_MESSAGE = "Too many attempts. Wait a minute, then try again."
 
 
 def set_refresh_cookie(response: Response, raw_token: str) -> None:
@@ -59,7 +62,28 @@ def auth_response(response: Response, result: AuthResult) -> AuthResponse:
 
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupRequest, response: Response, db: DBSession) -> AuthResponse:
+async def signup(
+    body: SignupRequest, request: Request, response: Response, db: DBSession, limiter: Limiter
+) -> AuthResponse:
+    settings = get_settings()
+    await enforce(
+        limiter,
+        [
+            (
+                "signup_ip",
+                f"signup:ip:{client_ip(request)}",
+                settings.rate_limit_signup_ip_per_hour,
+                3600,
+            ),
+            (
+                "signup_email",
+                f"signup:email:{email_key(body.email)}",
+                settings.rate_limit_login_email_per_minute,
+                60,
+            ),
+        ],
+        AUTH_RATE_MESSAGE,
+    )
     result = await service.signup(
         db, body.email, body.password, body.full_name, body.workspace_name
     )
@@ -67,15 +91,52 @@ async def signup(body: SignupRequest, response: Response, db: DBSession) -> Auth
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest, response: Response, db: DBSession) -> AuthResponse:
+async def login(
+    body: LoginRequest, request: Request, response: Response, db: DBSession, limiter: Limiter
+) -> AuthResponse:
+    settings = get_settings()
+    await enforce(
+        limiter,
+        [
+            (
+                "login_ip",
+                f"login:ip:{client_ip(request)}",
+                settings.rate_limit_login_ip_per_minute,
+                60,
+            ),
+            (
+                "login_email",
+                f"login:email:{email_key(body.email)}",
+                settings.rate_limit_login_email_per_minute,
+                60,
+            ),
+        ],
+        AUTH_RATE_MESSAGE,
+    )
     result = await service.login(db, body.email, body.password)
     return auth_response(response, result)
 
 
 @router.post("/refresh", response_model=AuthResponse)
 async def refresh(
-    response: Response, db: DBSession, refresh_token: RefreshCookie = None
+    request: Request,
+    response: Response,
+    db: DBSession,
+    limiter: Limiter,
+    refresh_token: RefreshCookie = None,
 ) -> AuthResponse:
+    await enforce(
+        limiter,
+        [
+            (
+                "refresh_ip",
+                f"refresh:ip:{client_ip(request)}",
+                get_settings().rate_limit_refresh_ip_per_minute,
+                60,
+            )
+        ],
+        AUTH_RATE_MESSAGE,
+    )
     result = await service.refresh(db, refresh_token)
     return auth_response(response, result)
 

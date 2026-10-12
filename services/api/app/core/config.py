@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     widget_token_ttl_minutes: int = Field(default=60, ge=1, le=24 * 60)
     widget_conversation_rate_per_minute: int = Field(default=10, ge=1)
     widget_ip_rate_per_minute: int = Field(default=30, ge=1)
+    widget_workspace_rate_per_minute: int = Field(default=300, ge=1)
+    widget_session_ip_rate_per_minute: int = Field(default=20, ge=1)
     # Chat input + output tokens per workspace per UTC day; above it the widget replies
     # with the fallback message instead of calling the LLM.
     widget_daily_token_budget: int = Field(default=200_000, ge=0)
@@ -87,6 +89,29 @@ class Settings(BaseSettings):
     classify_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     # At or above this needs-human probability a message becomes a ticket.
     needs_human_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+
+    # Rate limits (Redis sliding windows; fail open if Redis is down). Auth limits apply per
+    # client IP and, for login/signup, per email as well.
+    rate_limit_enabled: bool = True
+    rate_limit_login_ip_per_minute: int = Field(default=20, ge=1)
+    rate_limit_login_email_per_minute: int = Field(default=10, ge=1)
+    rate_limit_signup_ip_per_hour: int = Field(default=30, ge=1)
+    rate_limit_refresh_ip_per_minute: int = Field(default=60, ge=1)
+    rate_limit_uploads_per_hour: int = Field(default=60, ge=1)
+    rate_limit_regenerate_per_minute: int = Field(default=10, ge=1)
+    # Every authenticated dashboard request, per user.
+    rate_limit_api_user_per_minute: int = Field(default=300, ge=1)
+
+    # Observability. LOG_FORMAT=json for structured logs, text for local reading.
+    log_level: str = "INFO"
+    log_format: Literal["json", "text"] = "json"
+    # Bearer token for GET /metrics. Empty disables the endpoint (404).
+    metrics_token: SecretStr | None = None
+    # The worker refreshes a heartbeat in Redis; older than this, /health/ready reports it stale.
+    worker_heartbeat_stale_s: int = Field(default=60, ge=10)
+    # Optional error tracking. Needs the sentry-sdk package; empty disables it.
+    sentry_dsn: SecretStr | None = None
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

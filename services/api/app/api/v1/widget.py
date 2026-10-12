@@ -13,6 +13,7 @@ from app.ai.llm import LLMConfigError, UsageReportingLLMClient, get_llm_client
 from app.core.config import get_settings
 from app.core.deps import CurrentWidget, DBSession, WidgetDB, tenant_session
 from app.core.middleware import get_request_id
+from app.core.ratelimit import Limiter, client_ip, enforce
 from app.core.security import create_widget_token
 from app.modules.conversations import service
 from app.modules.conversations.chat import AnswerRequest, HistoryItem, stream_answer
@@ -64,7 +65,7 @@ def get_widget_embedder() -> EmbeddingClient:
         ) from exc
 
 
-Limiter = Annotated[WidgetLimiter, Depends(get_widget_limiter)]
+Budget = Annotated[WidgetLimiter, Depends(get_widget_limiter)]
 ChatLLM = Annotated[UsageReportingLLMClient, Depends(get_chat_llm)]
 Embedder = Annotated[EmbeddingClient, Depends(get_widget_embedder)]
 Decider = Annotated[DecisionClient, Depends(get_decision_client)]
@@ -73,9 +74,22 @@ Jobs = Annotated[JobQueue, Depends(get_job_queue)]
 
 @router.post("/session", response_model=WidgetSessionResponse)
 async def create_session(
-    body: WidgetSessionRequest, request: Request, db: DBSession
+    body: WidgetSessionRequest, request: Request, db: DBSession, limiter: Limiter
 ) -> WidgetSessionResponse:
     """Start or resume a widget conversation. Public: authenticated by key and origin."""
+    ip = client_ip(request)
+    await enforce(
+        limiter,
+        [
+            (
+                "widget_session_ip",
+                f"widget_session:ip:{ip}",
+                get_settings().widget_session_ip_rate_per_minute,
+                RATE_LIMIT_WINDOW_S,
+            )
+        ],
+        RATE_LIMITED_MESSAGE,
+    )
     key = await service.resolve_widget_key(db, body.public_key)
     if key is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown widget key")
@@ -124,27 +138,38 @@ async def send_message(
     request: Request,
     widget: CurrentWidget,
     limiter: Limiter,
+    budget: Budget,
     llm: ChatLLM,
     embedder: Embedder,
     decider: Decider,
     jobs: Jobs,
 ) -> StreamingResponse:
     settings = get_settings()
-    # Behind the web app's proxy, uvicorn's --proxy-headers resolves the client address.
-    client_ip = request.client.host if request.client else "unknown"
-    allowed = await limiter.allow(
-        f"conv:{widget.conversation_id}",
-        settings.widget_conversation_rate_per_minute,
-        RATE_LIMIT_WINDOW_S,
-    ) and await limiter.allow(
-        f"ip:{client_ip}", settings.widget_ip_rate_per_minute, RATE_LIMIT_WINDOW_S
+    # Per visitor (one conversation), per client IP, and per workspace overall.
+    await enforce(
+        limiter,
+        [
+            (
+                "widget_conversation",
+                f"widget:conv:{widget.conversation_id}",
+                settings.widget_conversation_rate_per_minute,
+                RATE_LIMIT_WINDOW_S,
+            ),
+            (
+                "widget_ip",
+                f"widget:ip:{client_ip(request)}",
+                settings.widget_ip_rate_per_minute,
+                RATE_LIMIT_WINDOW_S,
+            ),
+            (
+                "widget_workspace",
+                f"widget:ws:{widget.workspace_id}",
+                settings.widget_workspace_rate_per_minute,
+                RATE_LIMIT_WINDOW_S,
+            ),
+        ],
+        RATE_LIMITED_MESSAGE,
     )
-    if not allowed:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            RATE_LIMITED_MESSAGE,
-            headers={"Retry-After": str(RATE_LIMIT_WINDOW_S)},
-        )
 
     content = body.content.strip()
     if not content:
@@ -181,7 +206,7 @@ async def send_message(
         llm=llm,
         embedder=embedder,
         decider=decider,
-        limiter=limiter,
+        limiter=budget,
         request_id=get_request_id() or None,
         jobs=jobs,
     )

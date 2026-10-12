@@ -47,6 +47,14 @@ class MessageRoute(enum.StrEnum):
     AGENT = "agent"  # answered by the agent loop with read-only tools (e.g. order lookup)
 
 
+class FallbackReason(enum.StrEnum):
+    """Why an assistant reply fell back to "I couldn't find that in our help docs"."""
+
+    NO_SOURCES = "no_sources"  # retrieval found nothing relevant enough
+    NOT_GROUNDED = "not_grounded"  # the answer had no valid citation
+    BUDGET = "budget"  # daily token budget used up: not a knowledge gap
+
+
 class Rating(enum.StrEnum):
     UP = "up"
     DOWN = "down"
@@ -86,6 +94,7 @@ class Conversation(IdMixin, TimestampMixin, Base):
             "last_message_at",
             "id",
         ),
+        Index("ix_conversations_workspace_id_created_at", "workspace_id", "created_at"),
     )
 
     workspace_id: Mapped[uuid.UUID] = _workspace_fk()
@@ -120,11 +129,22 @@ class Message(IdMixin, TimestampMixin, Base):
         CheckConstraint(
             "route IN ('answer', 'fallback', 'small_talk', 'handoff', 'agent')", name="route"
         ),
+        CheckConstraint(
+            "fallback_reason IN ('no_sources', 'not_grounded', 'budget')",
+            name="fallback_reason",
+        ),
         Index(
             "ix_messages_workspace_id_conversation_id_created_at",
             "workspace_id",
             "conversation_id",
             "created_at",
+        ),
+        # Knowledge gaps: fallback replies in a date range.
+        Index(
+            "ix_messages_workspace_id_fallback_created_at",
+            "workspace_id",
+            "created_at",
+            postgresql_where=text("route = 'fallback'"),
         ),
     )
 
@@ -148,6 +168,8 @@ class Message(IdMixin, TimestampMixin, Base):
     classification: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # Assistant messages: how the reply was produced (MessageRoute).
     route: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Fallback replies: why (FallbackReason). NULL on everything else and on older rows.
+    fallback_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Assistant messages: names of the tools the agent ran for this reply.
     tools_used: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")

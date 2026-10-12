@@ -230,3 +230,47 @@ lists them. They stand in for a real order API until order lookup tools arrive.
 Prompts live as versioned files in `app/ai/prompts/` (`<name>_<version>.md`) and are loaded
 with `load_prompt(name, version)`. Never edit a released version in place: add `answer_v2.md`
 and switch callers to it, so `llm_calls.prompt_version` stays meaningful.
+
+## Rate limits, observability and analytics
+
+**Rate limits** (`app/core/ratelimit.py`): one Redis sliding-window limiter for the whole API.
+A refused request gets `429` with `Retry-After` (seconds until the oldest hit leaves the
+window) and the usual error shape (`code: rate_limited`). Limits: login per IP and per email,
+signup per IP and email, refresh per IP, widget messages per conversation, IP and workspace,
+widget sessions per IP, uploads and Regenerate per user, and every dashboard request per user.
+Widget polling (`GET /widget/conversation`) and health checks are never limited. All limits
+are `RATE_LIMIT_*` / `WIDGET_*` settings. If Redis is down, requests are allowed, a warning is
+logged at most once a minute and `resolveai_rate_limit_redis_errors_total` is incremented.
+
+**Logs** are JSON lines (`LOG_FORMAT=json`) with `request_id` and, when known, `workspace_id`,
+`user_id` and the job name. The request id comes from `X-Request-ID` (or is generated), is
+returned in that header, and travels with every arq job (`request_id` keyword), so a widget
+message, its `process_ticket` job and a later `execute_action` share it. The access log uses
+route templates, never raw paths. Emails, bearer tokens, JWTs and API keys are redacted from
+every line as a safety net; message bodies are never logged.
+
+**Metrics**: `GET /metrics` (Prometheus text) needs `Authorization: Bearer $METRICS_TOKEN` and
+is a 404 while the token is unset. It reports HTTP requests and latency by route and status,
+model calls (count, latency, tokens, cost, errors by model and purpose), job counts and
+durations, and 429s. The worker publishes its metrics to Redis with its heartbeat, so one
+scrape of the API covers both processes.
+
+**Health**: `/health` (liveness) and `/health/ready` (Postgres, Redis, worker). The worker
+refreshes `worker:heartbeat` every 15 seconds; an old (`stale`) or absent (`missing`)
+heartbeat makes the report `degraded` but keeps `200`, since the API still serves requests.
+Postgres or Redis failures return `503`. Set `SENTRY_DSN` (and install `sentry-sdk`) for
+error tracking; events are sent without request bodies, headers, cookies or user data.
+
+**Analytics**: `GET /api/v1/analytics/overview?days=7|30|90` and
+`GET /api/v1/analytics/knowledge-gaps?days=…`, any member, aggregated in Postgres under RLS.
+Days are UTC. Definitions:
+
+| Metric | Definition |
+| --- | --- |
+| AI-contained rate | Conversations with no ticket whose last assistant reply was neither a fallback nor rated thumbs down, over all conversations with a message |
+| Fallback-ended | Conversations whose last assistant reply was the "couldn't find that" fallback |
+| Handoff rate | Conversations that have a ticket |
+| First response / resolution | Median and p90 from ticket creation to the first sent reply / the first change to `resolved` |
+| Draft edit rate | AI drafts sent with text different from what the AI wrote (whitespace normalised), over AI drafts sent |
+| Cost per conversation | Model spend in the range over conversations in the range |
+| Knowledge gaps | Questions answered by a no-sources or not-grounded fallback (not budget fallbacks), grouped by word similarity, with emails, phone numbers, links and long numbers masked |

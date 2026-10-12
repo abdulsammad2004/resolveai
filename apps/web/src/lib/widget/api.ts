@@ -29,6 +29,8 @@ export class WidgetError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Seconds to wait before retrying, from Retry-After on a 429. */
+    readonly retryAfterS: number | null = null,
   ) {
     super(message);
     this.name = "WidgetError";
@@ -36,6 +38,19 @@ export class WidgetError extends Error {
 }
 
 const FALLBACK_ERROR = "Something went wrong. Please try again.";
+const RATE_LIMITED_ERROR = "You're sending messages a little fast. Please wait a moment and try again.";
+
+/** A 429, worded for the visitor, with how long to wait (seconds) for the banner timer. */
+export function rateLimitNotice(error: unknown): { message: string; seconds: number } | null {
+  if (!(error instanceof WidgetError) || error.status !== 429) return null;
+  const seconds = Math.min(Math.max(error.retryAfterS ?? 30, 1), 3600);
+  const wait =
+    seconds < 60
+      ? `${seconds} second${seconds === 1 ? "" : "s"}`
+      : `${Math.ceil(seconds / 60)} minute${Math.ceil(seconds / 60) === 1 ? "" : "s"}`;
+  const base = (error.message || RATE_LIMITED_ERROR).replace(/\s*Please wait a moment and try again\.?$/, "");
+  return { message: `${base} Please try again in ${wait}.`, seconds };
+}
 
 async function errorFrom(response: Response): Promise<WidgetError> {
   let message = FALLBACK_ERROR;
@@ -45,7 +60,12 @@ async function errorFrom(response: Response): Promise<WidgetError> {
   } catch {
     // Non-JSON error body: keep the generic copy.
   }
-  return new WidgetError(message, response.status);
+  const retryAfter = Number(response.headers.get("Retry-After"));
+  return new WidgetError(
+    message,
+    response.status,
+    Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+  );
 }
 
 async function request<T>(path: string, init: RequestInit & { token?: string }): Promise<T> {
