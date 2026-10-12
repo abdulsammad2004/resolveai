@@ -214,7 +214,7 @@ async def test_refund_request_is_proposed_never_executed(
     assert len(action["idempotency_key"]) == 64
     # Nothing ran: no result, nobody approved it.
     assert action["result"] is None
-    assert action["approved_by"] is None
+    assert action["decided_by"] is None
     statuses = await rows(app_role_engine, owner.workspace_id, "SELECT status FROM tool_calls")
     assert [r["status"] for r in statuses] == ["proposed", "proposed"]
 
@@ -290,6 +290,7 @@ SAMPLE_ARGS = {
     "search_knowledge": {"query": "How long do returns take?"},
     "get_order_status": {"order_number": "RA-10421", "email": "maya.robinson@example.com"},
     "request_refund": {"order_number": "RA-10421", "reason": "Arrived torn", "amount": 24.5},
+    "request_cancellation": {"order_number": "RA-10422", "reason": "Ordered twice"},
     "escalate_to_human": {"reason": "Customer is upset"},
     "hand_off_to_team": {"reason": "Customer wants to cancel order RA-10421"},
 }

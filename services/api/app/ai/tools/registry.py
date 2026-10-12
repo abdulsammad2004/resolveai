@@ -37,6 +37,8 @@ from app.ai.llm import ToolCallRequest, ToolSpec
 from app.ai.tools.models import ToolCall, ToolCallStatus
 from app.core.deps import tenant_session
 from app.modules.approvals.models import ActionRequest, ActionStatus
+from app.modules.audit import service as audit
+from app.modules.audit.models import ActorType
 from app.modules.knowledge.retrieval import RetrievedChunk
 
 logger = logging.getLogger("app.ai.tools")
@@ -74,6 +76,8 @@ class ToolContext:
     # True only when the customer's own request was classified as a refund request. Refunds
     # can't be proposed otherwise, whatever a document or tool result says.
     customer_asked_refund: bool = False
+    # The same for cancelling an order.
+    customer_asked_cancel: bool = False
     # Knowledge chunks retrieved during this run, numbered S1, S2, ... in this order.
     sources: list[RetrievedChunk] = field(default_factory=list)
     # Set by hand_off_to_team; the widget opens (or reuses) the ticket after the run.
@@ -169,7 +173,7 @@ async def _propose(
 
     arguments = args.model_dump(mode="json")
     # The same proposal for the same ticket is stored once, however often it is made.
-    await db.execute(
+    inserted = await db.scalar(
         insert(ActionRequest)
         .values(
             id=uuid.uuid4(),
@@ -184,7 +188,20 @@ async def _propose(
             idempotency_key=idempotency_key(ctx.ticket_id, tool.name, arguments),
         )
         .on_conflict_do_nothing(index_elements=["idempotency_key"])
+        .returning(ActionRequest.id)
     )
+    if inserted is not None:
+        audit.record(
+            db,
+            workspace_id=ctx.workspace_id,
+            ticket_id=ctx.ticket_id,
+            actor_type=ActorType.AI,
+            actor_id=None,
+            action="action.proposed",
+            target_type="action_request",
+            target_id=inserted,
+            after={"status": ActionStatus.PROPOSED, "tool_name": tool.name},
+        )
     return ToolResult(ToolCallStatus.PROPOSED, PROPOSED_MESSAGE, f"{label} — waiting for approval")
 
 

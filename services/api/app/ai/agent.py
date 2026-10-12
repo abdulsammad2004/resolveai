@@ -177,6 +177,8 @@ class DraftInput:
     intent: str
     # (role, content) of the conversation, oldest first: customer | assistant | agent
     messages: Sequence[tuple[str, str]]
+    # (tool, status, outcome) of the actions on this ticket, oldest first.
+    actions: Sequence[tuple[str, str, str]] = ()
 
 
 def build_draft_messages(system_prompt: str, data: DraftInput) -> list[ChatMessage]:
@@ -191,7 +193,14 @@ def build_draft_messages(system_prompt: str, data: DraftInput) -> list[ChatMessa
         f"{neutralize((data.description or '')[:MESSAGE_CHARS])}\n</ticket>"
     )
     conversation = "<conversation>\n" + "\n".join(lines) + "\n</conversation>"
+    content = f"{ticket}\n\n{conversation}"
+    if data.actions:
+        actions = "\n".join(
+            f'<action tool="{attr(tool)}" status="{attr(status)}">{neutralize(outcome)}</action>'
+            for tool, status, outcome in data.actions
+        )
+        content += f"\n\n<actions>\n{actions}\n</actions>"
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"{ticket}\n\n{conversation}"},
+        {"role": "user", "content": content},
     ]

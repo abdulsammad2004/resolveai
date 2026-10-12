@@ -1,6 +1,7 @@
 """Customer chat widget. Called by anonymous visitors with a widget token, never a user token."""
 
 import logging
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,14 +17,17 @@ from app.core.security import create_widget_token
 from app.modules.conversations import service
 from app.modules.conversations.chat import AnswerRequest, HistoryItem, stream_answer
 from app.modules.conversations.limits import WidgetLimiter, get_widget_limiter
+from app.modules.conversations.models import ConversationStatus
 from app.modules.conversations.schemas import (
     FeedbackOut,
+    ResolutionFeedbackRequest,
     WidgetConversationOut,
     WidgetFeedbackRequest,
     WidgetMessageRequest,
     WidgetSessionRequest,
     WidgetSessionResponse,
 )
+from app.modules.tickets import service as tickets_service
 from app.workers.queue import JobQueue, get_job_queue
 
 logger = logging.getLogger("app.api.widget")
@@ -32,6 +36,7 @@ router = APIRouter(prefix="/widget", tags=["widget"])
 
 RATE_LIMIT_WINDOW_S = 60
 RATE_LIMITED_MESSAGE = "You're sending messages a little fast. Please wait a moment and try again."
+CLOSED_MESSAGE = "This conversation is closed. Start a new one to keep chatting."
 SSE_HEADERS = {
     # no-transform stops compression middleware/proxies from buffering the stream.
     "Cache-Control": "no-cache, no-transform",
@@ -149,12 +154,23 @@ async def send_message(
         conversation = await service.get_conversation(
             db, widget.workspace_id, widget.conversation_id
         )
+        # A closed (e.g. resolved) conversation is read-only; the widget starts a new one.
+        if conversation.status == ConversationStatus.CLOSED:
+            raise HTTPException(status.HTTP_409_CONFLICT, CLOSED_MESSAGE)
         customer_message, history = await service.add_customer_message(
             db, conversation, content
         )
+        # A reply to a replied or resolved ticket puts it back in the review queue.
+        reopened = await tickets_service.reopen_for_customer_message(db, conversation)
         history_items = [
             HistoryItem(role=m.role, content=m.content, route=m.route) for m in history
         ]
+
+    if reopened is not None:
+        try:
+            await jobs.enqueue_process_ticket(reopened, widget.workspace_id)
+        except Exception:
+            logger.exception("Failed to enqueue drafting (ticket_id=%s)", reopened)
 
     req = AnswerRequest(
         workspace_id=widget.workspace_id,
@@ -175,7 +191,34 @@ async def send_message(
 
 
 @router.get("/conversation", response_model=WidgetConversationOut)
-async def get_conversation(widget: CurrentWidget, db: WidgetDB) -> WidgetConversationOut:
+async def get_conversation(
+    widget: CurrentWidget, db: WidgetDB, after: uuid.UUID | None = None
+) -> WidgetConversationOut:
+    """The conversation's messages. With `after` (the id of the newest message the widget
+    has), only newer ones: the widget polls this way for team replies. Polling calls no
+    model and doesn't count toward the message rate limits or the token budget. An unknown
+    `after` id returns the whole conversation."""
+    return await service.widget_conversation(
+        db, widget.workspace_id, widget.conversation_id, after=after
+    )
+
+
+@router.post("/conversation/reopen", response_model=WidgetConversationOut)
+async def reopen_conversation(widget: CurrentWidget, db: WidgetDB) -> WidgetConversationOut:
+    """"Still need help?" on a resolved conversation: reopens the same ticket and
+    conversation (still with the team). 409 unless the conversation was resolved."""
+    conversation = await service.get_conversation(db, widget.workspace_id, widget.conversation_id)
+    await tickets_service.reopen_resolved_from_widget(db, conversation)
+    return await service.widget_conversation(db, widget.workspace_id, widget.conversation_id)
+
+
+@router.post("/conversation/resolution-feedback", response_model=WidgetConversationOut)
+async def rate_resolution(
+    body: ResolutionFeedbackRequest, widget: CurrentWidget, db: WidgetDB
+) -> WidgetConversationOut:
+    """"Was this helpful?" after a resolve, stored on the ticket. 409 unless resolved."""
+    conversation = await service.get_conversation(db, widget.workspace_id, widget.conversation_id)
+    await tickets_service.rate_resolution(db, conversation, body.rating)
     return await service.widget_conversation(db, widget.workspace_id, widget.conversation_id)
 
 
@@ -183,6 +226,9 @@ async def get_conversation(widget: CurrentWidget, db: WidgetDB) -> WidgetConvers
 async def rate_message(
     body: WidgetFeedbackRequest, widget: CurrentWidget, db: WidgetDB
 ) -> FeedbackOut:
+    conversation = await service.get_conversation(db, widget.workspace_id, widget.conversation_id)
+    if conversation.status == ConversationStatus.CLOSED:
+        raise HTTPException(status.HTTP_409_CONFLICT, CLOSED_MESSAGE)
     feedback = await service.set_feedback(
         db,
         workspace_id=widget.workspace_id,

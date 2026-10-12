@@ -1,4 +1,5 @@
-"""Inbox tickets. Any member may read, create and update them, and regenerate drafts."""
+"""Inbox tickets. Any member may read, create and update them, and review drafts: edit,
+send (approve and post to the customer's chat), reject, regenerate, or write a reply."""
 
 import logging
 import uuid
@@ -11,6 +12,10 @@ from app.core.deps import CurrentPrincipal, TenantDB, tenant_session
 from app.modules.tickets import service
 from app.modules.tickets.schemas import (
     AssigneeFilter,
+    DraftCreate,
+    DraftEdit,
+    DraftReject,
+    DraftSend,
     RegenerateDraftOut,
     TicketCreate,
     TicketDetail,
@@ -116,5 +121,64 @@ async def regenerate_draft(
 async def update_ticket(
     ticket_id: uuid.UUID, body: TicketUpdate, principal: CurrentPrincipal, db: TenantDB
 ) -> TicketDetail:
-    await service.update_ticket(db, principal.workspace_id, ticket_id, body)
+    await service.update_ticket(
+        db, principal.workspace_id, ticket_id, body, user_id=principal.user_id
+    )
+    return await service.ticket_detail(db, principal.workspace_id, ticket_id)
+
+
+@router.post(
+    "/{ticket_id}/drafts", response_model=TicketDetail, status_code=status.HTTP_201_CREATED
+)
+async def write_reply(
+    ticket_id: uuid.UUID, body: DraftCreate, principal: CurrentPrincipal, db: TenantDB
+) -> TicketDetail:
+    """Start a reply from scratch (no AI text). It replaces any draft still under review."""
+    await service.create_human_draft(
+        db, principal.workspace_id, ticket_id, body, user_id=principal.user_id
+    )
+    return await service.ticket_detail(db, principal.workspace_id, ticket_id)
+
+
+@router.patch("/{ticket_id}/drafts/{draft_id}", response_model=TicketDetail)
+async def edit_draft(
+    ticket_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    body: DraftEdit,
+    principal: CurrentPrincipal,
+    db: TenantDB,
+) -> TicketDetail:
+    await service.edit_draft(
+        db, principal.workspace_id, ticket_id, draft_id, body.content, user_id=principal.user_id
+    )
+    return await service.ticket_detail(db, principal.workspace_id, ticket_id)
+
+
+@router.post("/{ticket_id}/drafts/{draft_id}/send", response_model=TicketDetail)
+async def send_draft(
+    ticket_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    body: DraftSend,
+    principal: CurrentPrincipal,
+    db: TenantDB,
+) -> TicketDetail:
+    """Post the draft in the customer's chat as a team reply; the ticket becomes replied.
+    A draft is sent once: sending it again returns 409."""
+    await service.send_draft(
+        db, principal.workspace_id, ticket_id, draft_id, body, user_id=principal.user_id
+    )
+    return await service.ticket_detail(db, principal.workspace_id, ticket_id)
+
+
+@router.post("/{ticket_id}/drafts/{draft_id}/reject", response_model=TicketDetail)
+async def reject_draft(
+    ticket_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    body: DraftReject,
+    principal: CurrentPrincipal,
+    db: TenantDB,
+) -> TicketDetail:
+    await service.reject_draft(
+        db, principal.workspace_id, ticket_id, draft_id, body, user_id=principal.user_id
+    )
     return await service.ticket_detail(db, principal.workspace_id, ticket_id)

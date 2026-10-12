@@ -18,11 +18,13 @@ from app.core.config import get_settings
 from app.core.database import engine
 from app.core.storage import get_storage
 from app.modules.approvals import models as approvals_models  # noqa: F401
+from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.conversations import models as conversations_models  # noqa: F401
+from app.modules.orders import models as orders_models  # noqa: F401
 from app.modules.tickets import models as tickets_models  # noqa: F401
 from app.modules.workspaces import models as workspaces_models  # noqa: F401
-from app.workers import drafting
+from app.workers import actions, drafting
 from app.workers.ingestion import JOB_TIMEOUT_S, MAX_TRIES, ingest_document
 
 # arq configures its own loggers; give the app's loggers a handler too.
@@ -50,6 +52,12 @@ class WorkerSettings:
             name="process_ticket",
             max_tries=drafting.MAX_TRIES,
             timeout=drafting.JOB_TIMEOUT_S,
+        ),
+        func(
+            actions.execute_action,
+            name="execute_action",
+            max_tries=actions.MAX_TRIES,
+            timeout=actions.JOB_TIMEOUT_S,
         ),
     ]
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

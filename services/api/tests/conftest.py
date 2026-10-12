@@ -38,6 +38,7 @@ API_DIR = Path(__file__).resolve().parents[1]
 TEST_OWNER_URL = _settings.test_migrations_database_url
 TEST_APP_URL = _settings.test_database_url
 TABLES = (
+    "audit_events",
     "tool_calls",
     "action_requests",
     "reply_drafts",
@@ -99,6 +100,8 @@ class RecordingQueue:
         self.jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
         # process_ticket jobs: (ticket_id, workspace_id, force)
         self.drafts: list[tuple[uuid.UUID, uuid.UUID, bool]] = []
+        # execute_action jobs: (action_id, workspace_id, idempotency_key)
+        self.executions: list[tuple[uuid.UUID, uuid.UUID, str]] = []
 
     async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
         self.jobs.append((document_id, workspace_id))
@@ -107,6 +110,11 @@ class RecordingQueue:
         self, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
     ) -> None:
         self.drafts.append((ticket_id, workspace_id, force))
+
+    async def enqueue_execute_action(
+        self, action_id: uuid.UUID, workspace_id: uuid.UUID, idempotency_key: str
+    ) -> None:
+        self.executions.append((action_id, workspace_id, idempotency_key))
 
 
 class InMemoryLock:

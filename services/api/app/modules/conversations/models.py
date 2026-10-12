@@ -100,6 +100,8 @@ class Conversation(IdMixin, TimestampMixin, Base):
     last_message_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Set when the conversation was closed (e.g. its ticket was resolved).
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The conversation's current ticket, once one was opened. use_alter: tickets also
     # reference conversations, so this foreign key is added after both tables exist.
     ticket_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -149,6 +151,15 @@ class Message(IdMixin, TimestampMixin, Base):
     # Assistant messages: names of the tools the agent ran for this reply.
     tools_used: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    # Agent messages: the reply draft they were sent from, and the teammate who sent them.
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("reply_drafts.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
 

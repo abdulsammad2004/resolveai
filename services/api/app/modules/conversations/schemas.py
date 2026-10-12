@@ -8,6 +8,9 @@ ConversationStatusLiteral = Literal["open", "needs_human", "closed"]
 RatingLiteral = Literal["up", "down"]
 RoleLiteral = Literal["customer", "assistant", "agent", "system"]
 RouteLiteral = Literal["answer", "fallback", "small_talk", "handoff", "agent"]
+# Team replies: sent unchanged from an AI draft, from an edited AI draft, or written by a
+# teammate from scratch.
+AuthoredByLiteral = Literal["ai_draft", "ai_draft_edited", "human"]
 
 
 class Citation(BaseModel):
@@ -64,8 +67,19 @@ class WidgetMessageOut(BaseModel):
 
 class WidgetConversationOut(BaseModel):
     id: uuid.UUID
+    # closed: read-only. The widget starts a new conversation when the visitor writes again.
     status: ConversationStatusLiteral
+    closed_at: datetime | None = None
+    # Closed because its ticket was resolved (shows "Still need help?" and the rating).
+    resolved: bool = False
+    resolution_rating: RatingLiteral | None = None
     messages: list[WidgetMessageOut]
+
+
+class ResolutionFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: RatingLiteral
 
 
 class WidgetFeedbackRequest(BaseModel):
@@ -142,6 +156,9 @@ class MessageOut(BaseModel):
     prompt_version: str | None
     created_at: datetime
     feedback: FeedbackOut | None = None
+    # Agent messages only (dashboard only, never the widget).
+    authored_by: AuthoredByLiteral | None = None
+    author_name: str | None = None
 
 
 class ConversationDetail(BaseModel):

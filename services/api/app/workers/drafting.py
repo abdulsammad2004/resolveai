@@ -2,8 +2,9 @@
 
 Read tools execute; write and sensitive tools only become proposed action_requests. The
 draft is never sent here. One run per ticket at a time (Redis lock). If a pending draft was
-already written from the same ticket and messages, the job does nothing unless forced
-(Regenerate). Logs carry ids and outcomes only, never ticket or message text.
+already written from the same ticket, messages and action outcomes, or a teammate is editing
+a reply, the job does nothing unless forced (Regenerate). Logs carry ids and outcomes only,
+never ticket or message text.
 """
 
 import asyncio
@@ -24,12 +25,15 @@ from app.ai.tools.builtin import DRAFT_TOOLS
 from app.ai.tools.registry import ToolContext
 from app.ai.usage import LLMPurpose, MeteredLLMClient
 from app.core.deps import tenant_session
+from app.modules.approvals.models import ActionRequest, ActionStatus
+from app.modules.audit.models import ActorType
 from app.modules.conversations.models import Contact, Message, MessageRole
+from app.modules.tickets import service as tickets_service
 from app.modules.tickets.models import DraftStatus, ReplyDraft, Ticket, TicketStatus
 
 logger = logging.getLogger("app.workers.drafting")
 
-PROMPT_NAME, PROMPT_VERSION = "draft", "v2"
+PROMPT_NAME, PROMPT_VERSION = "draft", "v3"
 MAX_TRIES = 3
 JOB_TIMEOUT_S = 120
 # Finish (or give up) before arq cancels the job, so the failure can be recorded.
@@ -39,6 +43,7 @@ LOCK_TTL_S = JOB_TIMEOUT_S + 30
 LOCKED_RETRY_S = 15
 MESSAGES_USED = 16
 REFUND_INTENT = "refund_request"
+CANCEL_INTENT = "cancel_order"
 FINAL_FAILURE_MESSAGE = "The assistant couldn't write a draft after several attempts."
 # Statuses a fresh draft moves the ticket out of; a replied or resolved ticket keeps its own.
 DRAFTABLE_STATUSES = frozenset({TicketStatus.NEW, TicketStatus.TRIAGED, TicketStatus.AWAITING_REVIEW})
@@ -120,11 +125,34 @@ async def process_ticket(
         await lock.release(lock_key(t_id), token)
 
 
-def _input_hash(subject: str, description: str | None, message_ids: list[uuid.UUID]) -> str:
+def _input_hash(
+    subject: str,
+    description: str | None,
+    message_ids: list[uuid.UUID],
+    actions: list[tuple[str, str, str]],
+) -> str:
     raw = json.dumps(
-        [PROMPT_NAME, PROMPT_VERSION, subject, description or "", [str(m) for m in message_ids]]
+        [
+            PROMPT_NAME,
+            PROMPT_VERSION,
+            subject,
+            description or "",
+            [str(m) for m in message_ids],
+            actions,
+        ]
     )
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _action_line(action: ActionRequest) -> tuple[str, str, str]:
+    """(tool, status, outcome) as the draft sees it. Outcomes are written by our executors."""
+    if action.status in (ActionStatus.SUCCEEDED, ActionStatus.FAILED):
+        outcome = str((action.result or {}).get("summary", ""))
+    elif action.status == ActionStatus.REJECTED:
+        outcome = "The team decided not to do this."
+    else:
+        outcome = "Not done yet: waiting for the team."
+    return action.tool_name, action.status, outcome
 
 
 async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, force: bool) -> str:
@@ -164,13 +192,22 @@ async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, forc
                     Contact.workspace_id == ws_id, Contact.id == ticket.contact_id
                 )
             )
-        input_hash = _input_hash(ticket.subject, ticket.description, [m.id for m in messages])
-        # From the classifier, never from the model: only the customer's request counts.
-        asked_refund = ticket.intent == REFUND_INTENT or any(
-            m.role == MessageRole.CUSTOMER
-            and (m.classification or {}).get("intent") == REFUND_INTENT
-            for m in messages
+        actions = [
+            _action_line(a)
+            for a in (
+                await db.execute(
+                    select(ActionRequest)
+                    .where(ActionRequest.workspace_id == ws_id, ActionRequest.ticket_id == t_id)
+                    .order_by(ActionRequest.created_at, ActionRequest.id)
+                )
+            ).scalars()
+        ]
+        input_hash = _input_hash(
+            ticket.subject, ticket.description, [m.id for m in messages], actions
         )
+        # From the classifier, never from the model: only the customer's request counts.
+        asked_refund = _customer_asked(ticket, messages, REFUND_INTENT)
+        asked_cancel = _customer_asked(ticket, messages, CANCEL_INTENT)
         current = await db.scalar(
             select(ReplyDraft)
             .where(
@@ -189,12 +226,16 @@ async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, forc
         ):
             logger.info("Pending draft is up to date, skipping (ticket_id=%s)", t_id)
             return "unchanged"
+        if not force and current is not None and current.status == DraftStatus.EDITED:
+            logger.info("A teammate is editing a reply, skipping (ticket_id=%s)", t_id)
+            return "being_edited"
         data = DraftInput(
             subject=ticket.subject,
             description=ticket.description,
             contact_email=contact_email,
             intent=ticket.intent,
             messages=[(m.role, m.content) for m in messages],
+            actions=actions,
         )
         conversation_id = ticket.conversation_id
 
@@ -211,6 +252,7 @@ async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, forc
         ticket_id=t_id,
         contact_email=contact_email,
         customer_asked_refund=asked_refund,
+        customer_asked_cancel=asked_cancel,
     )
     result = await run_agent(
         llm=metered,
@@ -230,12 +272,13 @@ async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, forc
         )
         if ticket is None:
             return "missing"
-        await _supersede_pending(db, ws_id, t_id)
+        await _supersede_pending(db, ws_id, t_id, include_edited=force)
         db.add(
             ReplyDraft(
                 workspace_id=ws_id,
                 ticket_id=t_id,
                 content=result.text,
+                original_content=result.text,
                 citations=[c.model_dump(mode="json") for c in result.citations],
                 status=DraftStatus.PENDING,
                 prompt_version=prompt.id,
@@ -244,7 +287,9 @@ async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, forc
             )
         )
         if ticket.status in DRAFTABLE_STATUSES:
-            ticket.status = TicketStatus.AWAITING_REVIEW
+            tickets_service.record_status_change(
+                db, ticket, TicketStatus.AWAITING_REVIEW, actor_type=ActorType.AI, actor_id=None
+            )
 
     logger.info(
         "Draft saved (ticket_id=%s, workspace_id=%s, tool_calls=%d, cited=%d)",
@@ -256,13 +301,26 @@ async def _draft(ctx: dict[str, Any], t_id: uuid.UUID, ws_id: uuid.UUID, *, forc
     return "drafted"
 
 
-async def _supersede_pending(db: Any, ws_id: uuid.UUID, t_id: uuid.UUID) -> None:
+def _customer_asked(ticket: Ticket, messages: list[Message], intent: str) -> bool:
+    return ticket.intent == intent or any(
+        m.role == MessageRole.CUSTOMER and (m.classification or {}).get("intent") == intent
+        for m in messages
+    )
+
+
+async def _supersede_pending(
+    db: Any, ws_id: uuid.UUID, t_id: uuid.UUID, *, include_edited: bool
+) -> None:
+    """Replace unreviewed drafts. A Regenerate (forced) also replaces a reply being edited."""
+    statuses = [DraftStatus.PENDING, DraftStatus.FAILED]
+    if include_edited:
+        statuses.append(DraftStatus.EDITED)
     await db.execute(
         update(ReplyDraft)
         .where(
             ReplyDraft.workspace_id == ws_id,
             ReplyDraft.ticket_id == t_id,
-            ReplyDraft.status.in_((DraftStatus.PENDING, DraftStatus.FAILED)),
+            ReplyDraft.status.in_(statuses),
         )
         .values(status=DraftStatus.SUPERSEDED)
     )

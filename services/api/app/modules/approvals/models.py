@@ -1,8 +1,9 @@
 import enum
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,7 +20,7 @@ class ActionStatus(enum.StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     EXECUTING = "executing"
-    SUCCEEDED = "succeeded"
+    SUCCEEDED = "succeeded"  # executed
     FAILED = "failed"
 
 
@@ -58,6 +59,14 @@ class ActionRequest(IdMixin, TimestampMixin, Base):
     # sha256 of (ticket, tool, canonical arguments): the same proposal is stored once.
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+    # Who approved or rejected it, when, and (for a rejection) why.
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Set when a worker claims the action; a stale value means the worker died mid-run.
+    execution_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

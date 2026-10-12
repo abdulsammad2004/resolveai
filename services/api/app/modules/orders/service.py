@@ -41,6 +41,11 @@ _SAMPLES: list[tuple[str, str, str, str | None, str | None, int | None, list[dic
 ]
 
 
+def seeded_statuses() -> dict[str, str]:
+    """Order number -> status as seeded; resetting demo data puts orders back to these."""
+    return {number: str(status_value) for number, _, status_value, *_ in _SAMPLES}
+
+
 def _total(items: list[dict]) -> Decimal:
     return sum((Decimal(i["unit_price"]) * i["quantity"] for i in items), Decimal("0.00"))
 
