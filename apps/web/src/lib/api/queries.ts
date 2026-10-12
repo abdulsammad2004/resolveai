@@ -41,6 +41,9 @@ export type ToolCallRecord = components["schemas"]["ToolCallOut"];
 export type AuditEvent = components["schemas"]["AuditEventOut"];
 export type DemoReset = components["schemas"]["DemoResetOut"];
 export type TranscriptMessage = components["schemas"]["MessageOut"];
+export type AnalyticsOverview = components["schemas"]["AnalyticsOverview"];
+export type KnowledgeGaps = components["schemas"]["KnowledgeGapsOut"];
+export type AnalyticsRange = 7 | 30 | 90;
 
 const DOCUMENTS_PAGE_SIZE = 100;
 const DOCUMENTS_MAX_PAGES = 50;
@@ -63,6 +66,9 @@ export const queryKeys = {
   actions: (wid: string) => [wid, "actions"] as const,
   actionList: (wid: string, status: ActionStatus | "all") =>
     [wid, "actions", "list", status] as const,
+  analytics: (wid: string, days: AnalyticsRange) => [wid, "analytics", "overview", days] as const,
+  knowledgeGaps: (wid: string, days: AnalyticsRange) =>
+    [wid, "analytics", "knowledge-gaps", days] as const,
 };
 
 export type TicketFilters = {
@@ -714,5 +720,44 @@ export function useResetDemoData() {
         queryClient.invalidateQueries({ queryKey: key });
       }
     },
+  });
+}
+
+// Analytics are aggregates over days; a minute of staleness is fine and keeps the dashboard cheap.
+const ANALYTICS_STALE_MS = 60_000;
+
+export function useAnalyticsOverview(days: AnalyticsRange) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.analytics(wid, days),
+    queryFn: async (): Promise<AnalyticsOverview> => {
+      const { data, error, response } = await api.GET("/api/v1/analytics/overview", {
+        params: { query: { days } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    staleTime: ANALYTICS_STALE_MS,
+    // Keep the previous range on screen while a new one loads, never another workspace's.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[0] === wid ? previous : undefined,
+  });
+}
+
+export function useKnowledgeGaps(days: AnalyticsRange) {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.knowledgeGaps(wid, days),
+    queryFn: async (): Promise<KnowledgeGaps> => {
+      const { data, error, response } = await api.GET("/api/v1/analytics/knowledge-gaps", {
+        params: { query: { days } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    staleTime: ANALYTICS_STALE_MS,
+    // Keep the previous range on screen while a new one loads, never another workspace's.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[0] === wid ? previous : undefined,
   });
 }

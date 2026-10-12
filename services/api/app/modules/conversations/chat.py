@@ -47,7 +47,12 @@ from app.core.config import get_settings
 from app.core.deps import tenant_session
 from app.modules.conversations import service
 from app.modules.conversations.limits import BudgetUnavailableError, WidgetLimiter
-from app.modules.conversations.models import Message, MessageRole, MessageRoute
+from app.modules.conversations.models import (
+    FallbackReason,
+    Message,
+    MessageRole,
+    MessageRoute,
+)
 from app.modules.conversations.schemas import Citation, FinalEvent
 from app.modules.knowledge.retrieval import RetrievedChunk, retrieve
 from app.modules.tickets import service as tickets_service
@@ -277,6 +282,7 @@ class _Pipeline:
         llm_call_id: uuid.UUID | None = None,
         prompt_version: str | None = None,
         tools_used: list[str] | None = None,
+        fallback_reason: FallbackReason | None = None,
     ) -> None:
         req = self.req
         ticket_id: uuid.UUID | None = None
@@ -307,6 +313,7 @@ class _Pipeline:
                 llm_call_id=llm_call_id,
                 prompt_version=prompt_version,
                 tools_used=tools_used or [],
+                fallback_reason=fallback_reason,
             )
         final = FinalEvent(
             id=message.id,
@@ -331,7 +338,11 @@ class _Pipeline:
             logger.exception("Failed to enqueue drafting (ticket_id=%s)", ticket_id)
 
     async def _fallback(
-        self, *, llm_call_id: uuid.UUID | None = None, prompt_version: str | None = None
+        self,
+        reason: FallbackReason,
+        *,
+        llm_call_id: uuid.UUID | None = None,
+        prompt_version: str | None = None,
     ) -> None:
         await self._save(
             Answer(content=FALLBACK_MESSAGE),
@@ -340,13 +351,14 @@ class _Pipeline:
             open_ticket=True,
             llm_call_id=llm_call_id,
             prompt_version=prompt_version,
+            fallback_reason=reason,
         )
 
     async def run(self) -> None:
         req = self.req
         if not await self._budget_left():
             logger.info("Widget answer: budget exhausted (workspace_id=%s)", req.workspace_id)
-            await self._fallback()
+            await self._fallback(FallbackReason.BUDGET)
             return
 
         self.classification = await self._classify()
@@ -499,7 +511,7 @@ class _Pipeline:
         chunks = result.chunks
         if not chunks:
             logger.info("Widget answer: no sources (conversation_id=%s)", req.conversation_id)
-            await self._fallback()
+            await self._fallback(FallbackReason.NO_SOURCES)
             return
 
         prompt = load_prompt(PROMPT_NAME, PROMPT_VERSION)
@@ -531,7 +543,11 @@ class _Pipeline:
             answer.grounded,
         )
         if not answer.grounded:
-            await self._fallback(llm_call_id=metered.last_call_id, prompt_version=prompt.id)
+            await self._fallback(
+                FallbackReason.NOT_GROUNDED,
+                llm_call_id=metered.last_call_id,
+                prompt_version=prompt.id,
+            )
             return
         await self._save(
             answer,

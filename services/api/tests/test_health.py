@@ -1,3 +1,4 @@
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -29,6 +30,7 @@ async def test_health_ready_success() -> None:
     with patch("redis.asyncio.from_url") as mock_from_url:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.get = AsyncMock(return_value=str(time.time() - 5))
         mock_redis.aclose = AsyncMock()
         mock_from_url.return_value = mock_redis
 
@@ -39,7 +41,7 @@ async def test_health_ready_success() -> None:
         assert response.status_code == 200
         assert response.json() == {
             "status": "ok",
-            "checks": {"postgres": "ok", "redis": "ok"},
+            "checks": {"postgres": "ok", "redis": "ok", "worker": "ok"},
         }
 
     app.dependency_overrides.clear()

@@ -1,12 +1,11 @@
-"""Widget rate limits and the per-workspace daily chat token budget, kept in Redis.
+"""The per-workspace daily chat token budget, kept in Redis.
 
-Rate limits fail open (a Redis outage must not take the widget down). The token budget
+Widget rate limits use the shared limiter in app.core.ratelimit. The token budget
 fails closed: without a reliable count the widget replies with the fallback message, which
 hands the conversation to a human instead of spending money blindly.
 """
 
 import logging
-import time
 import uuid
 from datetime import UTC, datetime
 from typing import Protocol
@@ -26,10 +25,6 @@ class BudgetUnavailableError(Exception):
 
 
 class WidgetLimiter(Protocol):
-    async def allow(self, key: str, limit: int, window_s: int) -> bool:
-        """Count one hit on `key`; False if it exceeds `limit` in the current window."""
-        ...
-
     async def tokens_used_today(self, workspace_id: uuid.UUID) -> int: ...
 
     async def add_tokens(self, workspace_id: uuid.UUID, tokens: int) -> None: ...
@@ -40,23 +35,8 @@ def _budget_key(workspace_id: uuid.UUID) -> str:
 
 
 class RedisWidgetLimiter:
-    """Fixed-window counters: INCR + EXPIRE per window."""
-
     def __init__(self, redis_url: str) -> None:
         self._redis = aioredis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
-
-    async def allow(self, key: str, limit: int, window_s: int) -> bool:
-        window = int(time.time() // window_s)
-        redis_key = f"widget:rl:{key}:{window}"
-        try:
-            async with self._redis.pipeline(transaction=True) as pipe:
-                pipe.incr(redis_key)
-                pipe.expire(redis_key, window_s * 2)
-                count, _ = await pipe.execute()
-        except (RedisError, OSError) as exc:
-            logger.warning("Rate limit check skipped (error=%s)", type(exc).__name__)
-            return True
-        return int(count) <= limit
 
     async def tokens_used_today(self, workspace_id: uuid.UUID) -> int:
         try:

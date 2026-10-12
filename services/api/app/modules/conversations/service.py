@@ -265,6 +265,7 @@ async def add_assistant_message(
     llm_call_id: uuid.UUID | None = None,
     prompt_version: str | None = None,
     tools_used: list[str] | None = None,
+    fallback_reason: str | None = None,
 ) -> Message:
     """Store an assistant reply. `escalate` hands the conversation to a person."""
     conversation = await get_conversation(db, workspace_id, conversation_id)
@@ -279,6 +280,7 @@ async def add_assistant_message(
         llm_call_id=llm_call_id,
         prompt_version=prompt_version,
         tools_used=tools_used or [],
+        fallback_reason=fallback_reason,
         created_at=now(),
     )
     db.add(message)

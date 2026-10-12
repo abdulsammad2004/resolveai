@@ -1,4 +1,9 @@
-"""Enqueueing background jobs from the API. Tests override `get_job_queue` with a fake."""
+"""Enqueueing background jobs from the API. Tests override `get_job_queue` with a fake.
+
+Every job carries the current request id (keyword `request_id`), so a widget message, the
+process_ticket job it starts and the execute_action job after approval share ids in the logs.
+The worker's job wrapper (app.workers.observability) restores it before the job runs.
+"""
 
 import uuid
 from typing import Protocol
@@ -7,10 +12,16 @@ from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.core.middleware import get_request_id
 
 INGEST_DOCUMENT = "ingest_document"
 PROCESS_TICKET = "process_ticket"
 EXECUTE_ACTION = "execute_action"
+
+
+def _trace() -> dict[str, str]:
+    request_id = get_request_id()
+    return {"request_id": request_id} if request_id else {}
 
 
 def execute_action_job_id(idempotency_key: str) -> str:
@@ -42,13 +53,17 @@ class ArqJobQueue:
 
     async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
         pool = await self._get_pool()
-        await pool.enqueue_job(INGEST_DOCUMENT, str(document_id), str(workspace_id))
+        await pool.enqueue_job(
+            INGEST_DOCUMENT, str(document_id), str(workspace_id), **_trace()
+        )
 
     async def enqueue_process_ticket(
         self, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
     ) -> None:
         pool = await self._get_pool()
-        await pool.enqueue_job(PROCESS_TICKET, str(ticket_id), str(workspace_id), force)
+        await pool.enqueue_job(
+            PROCESS_TICKET, str(ticket_id), str(workspace_id), force, **_trace()
+        )
 
     async def enqueue_execute_action(
         self, action_id: uuid.UUID, workspace_id: uuid.UUID, idempotency_key: str
@@ -59,6 +74,7 @@ class ArqJobQueue:
             str(action_id),
             str(workspace_id),
             _job_id=execute_action_job_id(idempotency_key),
+            **_trace(),
         )
 
     async def close(self) -> None:

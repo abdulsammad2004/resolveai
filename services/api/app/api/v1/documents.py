@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.deps import CurrentPrincipal, Principal, TenantDB, require_role
+from app.core.ratelimit import user_rate_limit
 from app.core.storage import Storage, get_storage
 from app.modules.knowledge import service
 from app.modules.knowledge.schemas import DocumentOut, DocumentPage
@@ -31,6 +32,8 @@ KnowledgeEditor = Annotated[Principal, Depends(require_role(Role.OWNER, Role.ADM
 StorageDep = Annotated[Storage, Depends(get_storage)]
 QueueDep = Annotated[JobQueue, Depends(get_job_queue)]
 
+upload_limit = user_rate_limit("upload", lambda: get_settings().rate_limit_uploads_per_hour, 3600)
+
 
 async def _enqueue(queue: JobQueue, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
     # The row is already committed; if Redis is down it stays `uploaded` and can be reindexed.
@@ -40,7 +43,12 @@ async def _enqueue(queue: JobQueue, document_id: uuid.UUID, workspace_id: uuid.U
         logger.exception("Failed to enqueue ingestion (document_id=%s)", document_id)
 
 
-@router.post("", response_model=DocumentOut, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=DocumentOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(upload_limit)],
+)
 async def upload_document(
     request: Request,
     principal: KnowledgeEditor,

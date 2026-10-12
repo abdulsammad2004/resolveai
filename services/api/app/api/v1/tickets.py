@@ -8,7 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.ai.decisions import DecisionClient, DecisionError, get_decision_client
+from app.core.config import get_settings
 from app.core.deps import CurrentPrincipal, TenantDB, tenant_session
+from app.core.ratelimit import user_rate_limit
 from app.modules.tickets import service
 from app.modules.tickets.schemas import (
     AssigneeFilter,
@@ -33,6 +35,10 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 Decider = Annotated[DecisionClient, Depends(get_decision_client)]
 Jobs = Annotated[JobQueue, Depends(get_job_queue)]
+
+regenerate_limit = user_rate_limit(
+    "regenerate", lambda: get_settings().rate_limit_regenerate_per_minute, 60
+)
 
 
 async def _enqueue_draft(
@@ -104,6 +110,7 @@ async def create_ticket(
     "/{ticket_id}/regenerate-draft",
     response_model=RegenerateDraftOut,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(regenerate_limit)],
 )
 async def regenerate_draft(
     ticket_id: uuid.UUID, principal: CurrentPrincipal, db: TenantDB, jobs: Jobs

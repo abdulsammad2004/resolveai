@@ -84,3 +84,44 @@ def unhandled_error_response(request_id: str) -> JSONResponse:
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+
+
+def _scrub_event(event: dict, hint: dict) -> dict:
+    """Sentry before_send: drop request bodies, headers and cookies; redact messages."""
+    from app.core.logs import redact
+
+    request = event.get("request")
+    if isinstance(request, dict):
+        for key in ("data", "cookies", "headers", "query_string"):
+            request.pop(key, None)
+    event.pop("user", None)
+    for entry in (event.get("logentry"), event.get("message")):
+        if isinstance(entry, dict) and isinstance(entry.get("message"), str):
+            entry["message"] = redact(entry["message"])
+    for exc in (event.get("exception") or {}).get("values", []):
+        if isinstance(exc.get("value"), str):
+            exc["value"] = redact(exc["value"])
+    return event
+
+
+def init_error_tracking() -> bool:
+    """Start Sentry if SENTRY_DSN is set and sentry-sdk is installed. Off by default."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if settings.sentry_dsn is None or not settings.sentry_dsn.get_secret_value():
+        return False
+    try:
+        import sentry_sdk  # type: ignore[import-not-found]
+    except ImportError:
+        logger.warning("SENTRY_DSN is set but sentry-sdk is not installed; error tracking is off")
+        return False
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn.get_secret_value(),
+        environment=settings.environment,
+        send_default_pii=False,
+        include_local_variables=False,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        before_send=_scrub_event,
+    )
+    return True
