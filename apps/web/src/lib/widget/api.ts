@@ -66,8 +66,27 @@ export function createSession(body: {
   return request("/api/v1/widget/session", { method: "POST", body: JSON.stringify(body) });
 }
 
-export function fetchConversation(token: string): Promise<WidgetConversation> {
-  return request("/api/v1/widget/conversation", { method: "GET", token });
+/**
+ * The conversation. With `after` (the id of the newest message already shown), only newer
+ * messages: cheap enough to poll, and it doesn't count toward the chat's rate limits.
+ */
+export function fetchConversation(token: string, after?: string): Promise<WidgetConversation> {
+  const query = after ? `?after=${encodeURIComponent(after)}` : "";
+  return request(`/api/v1/widget/conversation${query}`, { method: "GET", token });
+}
+
+/** "Still need help?" on a resolved conversation: reopens it with the team. */
+export function reopenConversation(token: string): Promise<WidgetConversation> {
+  return request("/api/v1/widget/conversation/reopen", { method: "POST", token });
+}
+
+/** "Was this helpful?" for the resolution of a resolved conversation. */
+export function rateResolution(token: string, rating: Rating): Promise<WidgetConversation> {
+  return request("/api/v1/widget/conversation/resolution-feedback", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ rating }),
+  });
 }
 
 export function sendFeedback(token: string, messageId: string, rating: Rating): Promise<unknown> {

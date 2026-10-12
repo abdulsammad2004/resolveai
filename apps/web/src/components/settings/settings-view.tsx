@@ -11,6 +11,7 @@ import { z } from "zod";
 import { FormError } from "@/components/auth/form-error";
 import { GlassPanel } from "@/components/glass-panel";
 import { PageHeader } from "@/components/page-header";
+import { ResetDemoData } from "@/components/settings/reset-demo-data";
 import { StatusChip, roleLabel, roleTone } from "@/components/status-chip";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -374,9 +375,12 @@ function DemoDataPanel() {
             widget. Loading them again doesn&apos;t create duplicates.
           </p>
         </div>
-        <Button type="button" onClick={() => void load()} disabled={seed.isPending}>
-          {seed.isPending ? "Loading…" : "Load sample orders"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" onClick={() => void load()} disabled={seed.isPending}>
+            {seed.isPending ? "Loading…" : "Load sample orders"}
+          </Button>
+          <ResetDemoData />
+        </div>
       </div>
 
       {orders.isPending && <Skeleton className="h-32 w-full" />}

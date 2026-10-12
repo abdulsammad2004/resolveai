@@ -8,6 +8,7 @@ import type { ActionStatus, ProposedAction } from "@/lib/api/queries";
 
 const TOOL_LABELS: Record<string, string> = {
   request_refund: "Refund request",
+  request_cancellation: "Order cancellation",
   escalate_to_human: "Escalation to a teammate",
   get_order_status: "Order lookup",
   search_knowledge: "Help article search",
@@ -53,6 +54,11 @@ const FIELD_LABELS: Record<string, string> = {
   email: "Email",
   query: "Search",
 };
+
+/** Refunds and cancellations: only owners and admins may approve or reject them. */
+export function canDecide(role: string | null, action: Pick<ProposedAction, "risk">): boolean {
+  return action.risk !== "sensitive" || role === "owner" || role === "admin";
+}
 
 /**
  * The action's arguments as readable label/value pairs. The reason is shown separately,
