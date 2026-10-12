@@ -9,6 +9,7 @@ import { FormError } from "@/components/auth/form-error";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, type ChipTone } from "@/components/status-chip";
+import { intentText } from "@/components/tickets/ticket-chips";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CitedAnswer } from "@/components/widget/cited-answer";
@@ -43,9 +44,9 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "closed", label: "Closed" },
 ];
 
-/** "refund_request" -> "refund request" */
+/** "cancel_order" -> "cancel order" (the Inbox labels, in lower case for running text). */
 export function intentLabel(intent: string): string {
-  return intent.replaceAll("_", " ");
+  return intentText(intent).toLowerCase();
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });

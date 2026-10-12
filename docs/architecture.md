@@ -330,6 +330,7 @@ Routing is deterministic code that consumes this output (assignment rules, urgen
 | `get_order_status(order_id)` | None (read-only) | No |
 | `check_refund_eligibility(order_id)` | None (read-only) | No |
 | `create_ticket(...)` | Internal | No |
+| `hand_off_to_team(reason)` (widget only) | Internal: opens or reuses the conversation's ticket | No |
 | `issue_refund(order_id, amount)` | **Yes** | **Yes, always** |
 
 Rules:

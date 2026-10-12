@@ -38,6 +38,9 @@ API_DIR = Path(__file__).resolve().parents[1]
 TEST_OWNER_URL = _settings.test_migrations_database_url
 TEST_APP_URL = _settings.test_database_url
 TABLES = (
+    "tool_calls",
+    "action_requests",
+    "reply_drafts",
     "mock_orders",
     "tickets",
     "feedback",
@@ -94,9 +97,33 @@ class RecordingQueue:
 
     def __init__(self) -> None:
         self.jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
+        # process_ticket jobs: (ticket_id, workspace_id, force)
+        self.drafts: list[tuple[uuid.UUID, uuid.UUID, bool]] = []
 
     async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
         self.jobs.append((document_id, workspace_id))
+
+    async def enqueue_process_ticket(
+        self, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
+    ) -> None:
+        self.drafts.append((ticket_id, workspace_id, force))
+
+
+class InMemoryLock:
+    """Stands in for the Redis ticket lock."""
+
+    def __init__(self) -> None:
+        self.held: dict[str, str] = {}
+
+    async def acquire(self, key: str, ttl_s: int) -> str | None:
+        if key in self.held:
+            return None
+        self.held[key] = uuid.uuid4().hex
+        return self.held[key]
+
+    async def release(self, key: str, token: str) -> None:
+        if self.held.get(key) == token:
+            del self.held[key]
 
 
 class InMemoryLimiter:
@@ -133,6 +160,7 @@ def worker_ctx(storage: LocalStorage) -> dict:
     return {
         "storage": storage,
         "embedder": FakeEmbeddingClient(_settings.embedding_dim),
+        "ticket_lock": InMemoryLock(),
         "job_try": 1,
     }
 

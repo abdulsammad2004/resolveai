@@ -9,10 +9,15 @@ from arq.connections import RedisSettings
 from app.core.config import get_settings
 
 INGEST_DOCUMENT = "ingest_document"
+PROCESS_TICKET = "process_ticket"
 
 
 class JobQueue(Protocol):
     async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None: ...
+
+    async def enqueue_process_ticket(
+        self, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
+    ) -> None: ...
 
 
 class ArqJobQueue:
@@ -27,6 +32,12 @@ class ArqJobQueue:
     async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
         pool = await self._get_pool()
         await pool.enqueue_job(INGEST_DOCUMENT, str(document_id), str(workspace_id))
+
+    async def enqueue_process_ticket(
+        self, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
+    ) -> None:
+        pool = await self._get_pool()
+        await pool.enqueue_job(PROCESS_TICKET, str(ticket_id), str(workspace_id), force)
 
     async def close(self) -> None:
         if self._pool is not None:

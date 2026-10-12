@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ConversationStatusLiteral = Literal["open", "needs_human", "closed"]
 RatingLiteral = Literal["up", "down"]
 RoleLiteral = Literal["customer", "assistant", "agent", "system"]
-RouteLiteral = Literal["answer", "fallback", "small_talk", "handoff"]
+RouteLiteral = Literal["answer", "fallback", "small_talk", "handoff", "agent"]
 
 
 class Citation(BaseModel):
@@ -56,6 +56,8 @@ class WidgetMessageOut(BaseModel):
     citations: list[Citation]
     grounded: bool | None
     route: RouteLiteral | None = None
+    # Tools the agent ran for this reply, e.g. ["get_order_status"].
+    tools_used: list[str] = []
     created_at: datetime
     rating: RatingLiteral | None = None
 
@@ -89,6 +91,7 @@ class FinalEvent(BaseModel):
     citations: list[Citation]
     grounded: bool | None
     route: RouteLiteral
+    tools_used: list[str] = []
 
 
 # Dashboard ------------------------------------------------------------------------------
@@ -133,6 +136,7 @@ class MessageOut(BaseModel):
     citations: list[Citation]
     grounded: bool | None
     route: RouteLiteral | None = None
+    tools_used: list[str] = []
     # Customer messages: how the message was classified (dashboard only, never the widget).
     classification: dict[str, Any] | None = None
     prompt_version: str | None

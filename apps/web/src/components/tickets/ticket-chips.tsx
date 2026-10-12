@@ -1,5 +1,5 @@
 import { StatusChip, type ChipTone } from "@/components/status-chip";
-import type { TicketPriority, TicketStatus } from "@/lib/api/queries";
+import type { TicketIntent, TicketPriority, TicketStatus } from "@/lib/api/queries";
 
 export const statusLabel: Record<TicketStatus, string> = {
   new: "New",
@@ -46,8 +46,22 @@ export function PriorityChip({ priority }: { priority: TicketPriority }) {
   );
 }
 
-/** "refund_request" -> "Refund request" */
+// Every intent the classifier can return has an explicit label (the compiler checks this).
+export const intentLabels: Record<TicketIntent, string> = {
+  greeting: "Greeting",
+  thanks: "Thanks",
+  knowledge_question: "Knowledge question",
+  order_status: "Order status",
+  refund_request: "Refund request",
+  cancel_order: "Cancel order",
+  complaint: "Complaint",
+  account_change: "Account change",
+  other: "Other",
+};
+
+/** "cancel_order" -> "Cancel order"; unknown values are humanised. */
 export function intentText(intent: string): string {
+  if (intent in intentLabels) return intentLabels[intent as TicketIntent];
   const words = intent.replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

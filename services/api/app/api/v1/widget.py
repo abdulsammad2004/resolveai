@@ -24,6 +24,7 @@ from app.modules.conversations.schemas import (
     WidgetSessionRequest,
     WidgetSessionResponse,
 )
+from app.workers.queue import JobQueue, get_job_queue
 
 logger = logging.getLogger("app.api.widget")
 
@@ -62,6 +63,7 @@ Limiter = Annotated[WidgetLimiter, Depends(get_widget_limiter)]
 ChatLLM = Annotated[UsageReportingLLMClient, Depends(get_chat_llm)]
 Embedder = Annotated[EmbeddingClient, Depends(get_widget_embedder)]
 Decider = Annotated[DecisionClient, Depends(get_decision_client)]
+Jobs = Annotated[JobQueue, Depends(get_job_queue)]
 
 
 @router.post("/session", response_model=WidgetSessionResponse)
@@ -120,6 +122,7 @@ async def send_message(
     llm: ChatLLM,
     embedder: Embedder,
     decider: Decider,
+    jobs: Jobs,
 ) -> StreamingResponse:
     settings = get_settings()
     # Behind the web app's proxy, uvicorn's --proxy-headers resolves the client address.
@@ -149,7 +152,9 @@ async def send_message(
         customer_message, history = await service.add_customer_message(
             db, conversation, content
         )
-        history_items = [HistoryItem(role=m.role, content=m.content) for m in history]
+        history_items = [
+            HistoryItem(role=m.role, content=m.content, route=m.route) for m in history
+        ]
 
     req = AnswerRequest(
         workspace_id=widget.workspace_id,
@@ -162,6 +167,7 @@ async def send_message(
         decider=decider,
         limiter=limiter,
         request_id=get_request_id() or None,
+        jobs=jobs,
     )
     return StreamingResponse(
         stream_answer(req), media_type="text/event-stream", headers=SSE_HEADERS

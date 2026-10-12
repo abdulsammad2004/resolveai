@@ -2,7 +2,7 @@
 
 The primary provider is Cloudflare's Clef-flash decision model (Workers AI), which returns a
 probability for every allowed option instead of generated text. When Cloudflare isn't
-configured or a call fails, the chat LLM answers the same questions (prompt classify_v1).
+configured or a call fails, the chat LLM answers the same questions (prompt classify_v2).
 
 Only the minimum context leaves the system: the message plus the previous two messages of the
 conversation. Message text is never logged; llm_calls rows carry tokens, cost and latency only.
@@ -39,6 +39,7 @@ Intent = Literal[
     "knowledge_question",
     "order_status",
     "refund_request",
+    "cancel_order",
     "complaint",
     "account_change",
     "other",
@@ -54,6 +55,7 @@ INTENT_CRITERIA: dict[str, str] = {
     ),
     "order_status": "Asks where a specific order is, when it arrives, or for tracking.",
     "refund_request": "Asks for money back, a refund, or a return of a specific purchase.",
+    "cancel_order": "Asks to cancel a specific order, or to change one before it ships.",
     "complaint": "Expresses dissatisfaction with a product, delivery or the service.",
     "account_change": (
         "Asks to change account details, email, password, address or subscription, "
@@ -79,9 +81,12 @@ CLEF_MODEL_ID = "@cf/cloudflare/clef-flash"
 CLEF_URL = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/" + CLEF_MODEL_ID
 CLEF_TIMEOUT_S = 5.0
 CLEF_ATTEMPTS = 2  # one retry
-CONTEXT_MESSAGES = 2
+# The previous few messages give short replies ("yes please") their meaning. Each is cut
+# short to keep the cost low; the latest message keeps MAX_TEXT_CHARS.
+CONTEXT_MESSAGES = 3
+CONTEXT_CHARS = 400
 MAX_TEXT_CHARS = 2000
-PROMPT_NAME, PROMPT_VERSION = "classify", "v1"
+PROMPT_NAME, PROMPT_VERSION = "classify", "v2"
 
 
 class DecisionError(Exception):
@@ -121,7 +126,7 @@ class DecisionClient(Protocol):
 
 def _context(context: list[ContextMessage]) -> list[ContextMessage]:
     return [
-        ContextMessage(role=m.role, content=m.content[:MAX_TEXT_CHARS])
+        ContextMessage(role=m.role, content=m.content[:CONTEXT_CHARS])
         for m in context[-CONTEXT_MESSAGES:]
     ]
 

@@ -7,11 +7,12 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.ai import usage as ai_usage_models  # noqa: F401  (llm_calls model)
+from app.ai.tools import models as tool_models  # noqa: F401  (tool_calls model)
 from app.core.config import get_settings
 from app.core.database import Base
 
 # Import model modules here for Alembic autogenerate to discover:
-# from app.modules.approvals import models as approvals_models
+from app.modules.approvals import models as approvals_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.conversations import models as conversations_models  # noqa: F401
 from app.modules.knowledge import models as knowledge_models  # noqa: F401

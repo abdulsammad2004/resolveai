@@ -113,11 +113,10 @@ async def test_greeting_with_a_serious_request_opens_a_ticket(
     [
         ("I want a refund for order RA-10423", clf("refund_request", priority="high")),
         ("This is the worst service ever", clf("complaint", priority="normal")),
-        ("Where is my parcel?", clf("order_status", priority="normal")),
         ("Please change my email address", clf("account_change", priority="normal")),
         ("Something odd", clf("other", priority="low", needs_human=0.75, confidence=0.4)),
     ],
-    ids=["refund", "complaint", "order-status", "account-change", "high-needs-human"],
+    ids=["refund", "complaint", "account-change", "high-needs-human"],
 )
 async def test_handoff_intents_create_a_ticket_without_llm(
     app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine, message, classification

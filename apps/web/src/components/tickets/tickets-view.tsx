@@ -37,11 +37,11 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "resolved", label: "Resolved" },
 ];
 
-export function TicketsView() {
+export function TicketsView({ initialTicketId = null }: { initialTicketId?: string | null }) {
   const [tab, setTab] = useState<Tab>("all");
   const [priority, setPriority] = useState<TicketPriority | "">("");
   const [mine, setMine] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialTicketId);
   const [creating, setCreating] = useState(false);
 
   const tickets = useTickets({

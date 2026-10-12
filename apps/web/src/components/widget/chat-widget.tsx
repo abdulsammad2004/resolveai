@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowUp, Hourglass, RotateCcw, ThumbsDown, ThumbsUp, UsersRound, X } from "lucide-react";
+import {
+  ArrowUp,
+  Hourglass,
+  PackageCheck,
+  RotateCcw,
+  ThumbsDown,
+  ThumbsUp,
+  UsersRound,
+  X,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -88,6 +97,8 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
   const [messages, setMessages] = useState<WidgetMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
+  // What the assistant is checking before it answers, e.g. "Checking your order…".
+  const [activity, setActivity] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [rateLimited, setRateLimited] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -238,16 +249,26 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
           content: text,
           citations: [],
           grounded: null,
+          tools_used: [],
           created_at: new Date().toISOString(),
         },
       ]);
       setDraft("");
     }
     setStreaming("");
+    setActivity(null);
     setAnnouncement("The assistant is answering.");
 
     const attempt = async (token: string) =>
-      sendMessage(token, text, (piece) => setStreaming((s) => (s ?? "") + piece));
+      sendMessage(
+        token,
+        text,
+        (piece) => setStreaming((s) => (s ?? "") + piece),
+        (status) => {
+          setActivity(status.text);
+          setAnnouncement(status.text);
+        },
+      );
 
     try {
       let answer;
@@ -267,6 +288,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
           citations: answer.citations,
           grounded: answer.grounded,
           route: answer.route,
+          tools_used: answer.tools_used ?? [],
           created_at: new Date().toISOString(),
           rating: null,
         },
@@ -291,6 +313,7 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
       }
     } finally {
       setStreaming(null);
+      setActivity(null);
       inputRef.current?.focus();
     }
   }
@@ -437,6 +460,12 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
                 >
                   <div className="rounded-[12px] rounded-tl-[4px] border border-line bg-carbon px-3.5 py-2.5">
                     <CitedAnswer content={m.content} citations={m.citations} />
+                    {m.tools_used?.includes("get_order_status") && (
+                      <span className="mt-2 mr-1.5 inline-flex items-center gap-1.5 rounded-[4px] border border-ion/25 bg-ion/10 px-1.5 py-0.5 text-[11px] text-bone">
+                        <PackageCheck className="size-3 text-ion" aria-hidden />
+                        Checked your order
+                      </span>
+                    )}
                     {m.route === "handoff" && (
                       <span className="mt-2 inline-flex items-center gap-1.5 rounded-[4px] border border-line bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-ash">
                         <UsersRound className="size-3" aria-hidden />
@@ -454,10 +483,16 @@ export function ChatWidget({ publicKey }: { publicKey: string }) {
             {streaming !== null && (
               <div className="max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-line bg-carbon px-3.5 py-2.5">
                 {streaming === "" ? (
-                  <span className="flex h-6 items-center gap-1" aria-label="The assistant is typing">
-                    <span className="typing-dot size-1.5 rounded-full bg-ash" />
-                    <span className="typing-dot size-1.5 rounded-full bg-ash" />
-                    <span className="typing-dot size-1.5 rounded-full bg-ash" />
+                  <span
+                    className="flex h-6 items-center gap-2"
+                    aria-label={activity ?? "The assistant is typing"}
+                  >
+                    <span className="flex items-center gap-1" aria-hidden>
+                      <span className="typing-dot size-1.5 rounded-full bg-ash" />
+                      <span className="typing-dot size-1.5 rounded-full bg-ash" />
+                      <span className="typing-dot size-1.5 rounded-full bg-ash" />
+                    </span>
+                    {activity && <span className="text-xs text-ash">{activity}</span>}
                   </span>
                 ) : (
                   <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed" aria-hidden>

@@ -1,11 +1,17 @@
 "use client";
 
 import { ArrowLeft, UserRound } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { FormError } from "@/components/auth/form-error";
 import { contactName, Transcript } from "@/components/conversations/conversations-view";
+import {
+  AiDraftPanel,
+  isAwaitingDraft,
+  type DraftRequest,
+} from "@/components/tickets/ai-draft-panel";
+import { ProposedActions } from "@/components/tickets/proposed-actions";
 import {
   PRIORITIES,
   STATUSES,
@@ -13,10 +19,12 @@ import {
   priorityLabel,
   statusLabel,
 } from "@/components/tickets/ticket-chips";
+import { ToolActivity } from "@/components/tickets/tool-activity";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { errorMessage } from "@/lib/api/errors";
 import {
+  useRegenerateDraft,
   useTicket,
   useUpdateTicket,
   type Classification,
@@ -32,8 +40,24 @@ const fullFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", tim
 const SELECT_CLASS =
   "h-9 rounded-[6px] border border-line bg-carbon-input px-2 text-sm text-bone focus-visible:ring-2 focus-visible:ring-ion focus-visible:outline-none disabled:opacity-50";
 
+const AWAIT_TICK_MS = 5_000;
+
 export function TicketPanel({ id, onBack }: { id: string; onBack: () => void }) {
-  const ticket = useTicket(id);
+  // A Regenerate click on this ticket: show the skeleton until a different draft arrives.
+  const [request, setRequest] = useState<(DraftRequest & { ticketId: string }) | null>(null);
+  const activeRequest = request?.ticketId === id ? request : null;
+  const ticket = useTicket(id, {
+    awaitingDraft: (t) => isAwaitingDraft(t, activeRequest, Date.now()),
+  });
+  const [now, setNow] = useState(() => Date.now());
+  const awaiting = ticket.data ? isAwaitingDraft(ticket.data, activeRequest, now) : false;
+
+  // Re-check while waiting so the skeleton gives up after DRAFT_WAIT_MS.
+  useEffect(() => {
+    if (!awaiting) return;
+    const timer = window.setInterval(() => setNow(Date.now()), AWAIT_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [awaiting]);
 
   if (ticket.isPending) {
     return (
@@ -51,12 +75,43 @@ export function TicketPanel({ id, onBack }: { id: string; onBack: () => void }) 
       </div>
     );
   }
-  return <TicketBody ticket={ticket.data} onBack={onBack} />;
+  return (
+    <TicketBody
+      ticket={ticket.data}
+      onBack={onBack}
+      awaitingDraft={awaiting}
+      onDraftRequested={() => {
+        const at = Date.now();
+        setNow(at);
+        setRequest({ ticketId: id, at, previousDraftId: ticket.data.draft?.id ?? null });
+      }}
+    />
+  );
 }
 
-function TicketBody({ ticket: t, onBack }: { ticket: TicketDetail; onBack: () => void }) {
+function TicketBody({
+  ticket: t,
+  onBack,
+  awaitingDraft,
+  onDraftRequested,
+}: {
+  ticket: TicketDetail;
+  onBack: () => void;
+  awaitingDraft: boolean;
+  onDraftRequested: () => void;
+}) {
   const { user } = useAuth();
   const update = useUpdateTicket();
+  const regenerate = useRegenerateDraft();
+
+  async function regenerateDraft() {
+    try {
+      await regenerate.mutateAsync(t.id);
+      onDraftRequested();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  }
   const statusId = useId();
   const priorityId = useId();
   const assignedToMe = t.assignee?.user_id === user?.id;
@@ -175,6 +230,17 @@ function TicketBody({ ticket: t, onBack }: { ticket: TicketDetail; onBack: () =>
             <p className="text-sm leading-relaxed whitespace-pre-wrap text-bone/90">{t.description}</p>
           </section>
         )}
+
+        <AiDraftPanel
+          draft={t.draft ?? null}
+          awaiting={awaitingDraft}
+          regenerating={regenerate.isPending}
+          onRegenerate={() => void regenerateDraft()}
+        />
+
+        <ProposedActions actions={t.actions} />
+
+        <ToolActivity calls={t.tool_calls} />
 
         <WhyRouted classification={t.classification ?? null} />
 

@@ -4,7 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.modules.conversations.schemas import ContactOut, ConversationDetail
+from app.modules.approvals.schemas import ActionRequestOut
+from app.modules.conversations.schemas import Citation, ContactOut, ConversationDetail
 
 TicketStatusLiteral = Literal["new", "triaged", "awaiting_review", "replied", "resolved"]
 TicketPriorityLiteral = Literal["low", "normal", "high", "urgent"]
@@ -14,6 +15,7 @@ TicketIntentLiteral = Literal[
     "knowledge_question",
     "order_status",
     "refund_request",
+    "cancel_order",
     "complaint",
     "account_change",
     "other",
@@ -70,10 +72,49 @@ class TicketPage(BaseModel):
     counts: TicketCounts
 
 
+DraftStatusLiteral = Literal[
+    "pending", "approved", "edited", "rejected", "sent", "superseded", "failed"
+]
+ToolCallStatusLiteral = Literal["ok", "not_found", "invalid", "proposed", "denied", "error"]
+
+
+class ReplyDraftOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    content: str
+    citations: list[Citation]
+    status: DraftStatusLiteral
+    prompt_version: str | None
+    error: str | None
+    created_at: datetime
+
+
+class ToolCallOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    tool_name: str
+    status: ToolCallStatusLiteral
+    result_summary: str
+    latency_ms: int
+    created_at: datetime
+
+
 class TicketDetail(TicketSummary):
     description: str | None
     classification: ClassificationOut | None
     conversation: ConversationDetail | None
+    # The newest draft that hasn't been superseded (pending, failed, ...), if any.
+    draft: ReplyDraftOut | None = None
+    actions: list[ActionRequestOut] = []
+    # What the AI checked for this ticket and its conversation, oldest first.
+    tool_calls: list[ToolCallOut] = []
+
+
+class RegenerateDraftOut(BaseModel):
+    ticket_id: uuid.UUID
+    queued: bool
 
 
 class TicketCreate(BaseModel):

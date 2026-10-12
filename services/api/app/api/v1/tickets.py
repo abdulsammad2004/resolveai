@@ -1,16 +1,17 @@
-"""Inbox tickets. Any member may read, create and update them."""
+"""Inbox tickets. Any member may read, create and update them, and regenerate drafts."""
 
 import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.ai.decisions import DecisionClient, DecisionError, get_decision_client
-from app.core.deps import CurrentPrincipal, TenantDB
+from app.core.deps import CurrentPrincipal, TenantDB, tenant_session
 from app.modules.tickets import service
 from app.modules.tickets.schemas import (
     AssigneeFilter,
+    RegenerateDraftOut,
     TicketCreate,
     TicketDetail,
     TicketIntentLiteral,
@@ -19,12 +20,26 @@ from app.modules.tickets.schemas import (
     TicketStatusLiteral,
     TicketUpdate,
 )
+from app.workers.queue import JobQueue, get_job_queue
 
 logger = logging.getLogger("app.api.tickets")
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 Decider = Annotated[DecisionClient, Depends(get_decision_client)]
+Jobs = Annotated[JobQueue, Depends(get_job_queue)]
+
+
+async def _enqueue_draft(
+    jobs: JobQueue, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
+) -> bool:
+    """Queue the reply-draft job. The ticket must already be committed."""
+    try:
+        await jobs.enqueue_process_ticket(ticket_id, workspace_id, force=force)
+    except Exception:
+        logger.exception("Failed to enqueue drafting (ticket_id=%s)", ticket_id)
+        return False
+    return True
 
 
 @router.get("", response_model=TicketPage)
@@ -59,9 +74,10 @@ async def get_ticket(ticket_id: uuid.UUID, principal: CurrentPrincipal, db: Tena
 
 @router.post("", response_model=TicketDetail, status_code=status.HTTP_201_CREATED)
 async def create_ticket(
-    body: TicketCreate, principal: CurrentPrincipal, db: TenantDB, decider: Decider
+    body: TicketCreate, principal: CurrentPrincipal, decider: Decider, jobs: Jobs
 ) -> TicketDetail:
-    """A manual ticket, classified like a widget message (intent and priority)."""
+    """A manual ticket, classified like a widget message (intent and priority). A reply
+    draft is written in the background."""
     try:
         classification = await decider.classify(
             f"{body.subject}\n\n{body.description}", [], workspace_id=principal.workspace_id
@@ -69,8 +85,31 @@ async def create_ticket(
     except DecisionError:
         logger.warning("Manual ticket left unclassified (workspace_id=%s)", principal.workspace_id)
         classification = None
-    ticket = await service.create_manual_ticket(db, principal.workspace_id, body, classification)
-    return await service.ticket_detail(db, principal.workspace_id, ticket.id)
+    # Committed before the draft job is queued, so the worker can see the ticket.
+    async with tenant_session(principal.workspace_id, principal.user_id) as db:
+        ticket = await service.create_manual_ticket(
+            db, principal.workspace_id, body, classification
+        )
+    await _enqueue_draft(jobs, ticket.id, principal.workspace_id)
+    async with tenant_session(principal.workspace_id, principal.user_id) as db:
+        return await service.ticket_detail(db, principal.workspace_id, ticket.id)
+
+
+@router.post(
+    "/{ticket_id}/regenerate-draft",
+    response_model=RegenerateDraftOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def regenerate_draft(
+    ticket_id: uuid.UUID, principal: CurrentPrincipal, db: TenantDB, jobs: Jobs
+) -> RegenerateDraftOut:
+    """Write a fresh draft in the background; poll the ticket until it appears."""
+    await service.get_ticket(db, principal.workspace_id, ticket_id)
+    if not await _enqueue_draft(jobs, ticket_id, principal.workspace_id, force=True):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Couldn't start drafting. Try again shortly."
+        )
+    return RegenerateDraftOut(ticket_id=ticket_id, queued=True)
 
 
 @router.patch("/{ticket_id}", response_model=TicketDetail)

@@ -15,12 +15,16 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.decisions import Classification
+from app.ai.tools.models import ToolCall
+from app.modules.approvals import service as approvals_service
 from app.modules.auth.models import User
 from app.modules.conversations import service as conversations_service
 from app.modules.conversations.models import Contact, Conversation
 from app.modules.conversations.schemas import ContactOut
 from app.modules.tickets.models import (
     PRIORITY_ORDER,
+    DraftStatus,
+    ReplyDraft,
     Ticket,
     TicketPriority,
     TicketSource,
@@ -29,16 +33,19 @@ from app.modules.tickets.models import (
 from app.modules.tickets.schemas import (
     ClassificationOut,
     MemberRef,
+    ReplyDraftOut,
     TicketCounts,
     TicketCreate,
     TicketDetail,
     TicketPage,
     TicketSummary,
     TicketUpdate,
+    ToolCallOut,
 )
 from app.modules.workspaces.models import Membership
 
 SUBJECT_CHARS = 80
+TOOL_CALLS_SHOWN = 50
 
 
 def subject_from(text: str) -> str:
@@ -283,6 +290,38 @@ async def list_tickets(
     )
 
 
+async def latest_draft(
+    db: AsyncSession, workspace_id: uuid.UUID, ticket_id: uuid.UUID
+) -> ReplyDraft | None:
+    """The newest draft that hasn't been replaced by a later one."""
+    return await db.scalar(
+        select(ReplyDraft)
+        .where(
+            ReplyDraft.workspace_id == workspace_id,
+            ReplyDraft.ticket_id == ticket_id,
+            ReplyDraft.status != DraftStatus.SUPERSEDED,
+        )
+        .order_by(ReplyDraft.created_at.desc(), ReplyDraft.id.desc())
+        .limit(1)
+    )
+
+
+async def tool_calls_for_ticket(db: AsyncSession, ticket: Ticket) -> list[ToolCallOut]:
+    """Tool calls made for the ticket, and in its conversation before the ticket existed."""
+    scope = ToolCall.ticket_id == ticket.id
+    if ticket.conversation_id is not None:
+        scope = or_(scope, ToolCall.conversation_id == ticket.conversation_id)
+    rows = (
+        await db.execute(
+            select(ToolCall)
+            .where(ToolCall.workspace_id == ticket.workspace_id, scope)
+            .order_by(ToolCall.created_at.desc(), ToolCall.id.desc())
+            .limit(TOOL_CALLS_SHOWN)
+        )
+    ).scalars()
+    return [ToolCallOut.model_validate(c) for c in reversed(list(rows))]
+
+
 async def ticket_detail(
     db: AsyncSession, workspace_id: uuid.UUID, ticket_id: uuid.UUID
 ) -> TicketDetail:
@@ -295,6 +334,7 @@ async def ticket_detail(
         conversation = await conversations_service.conversation_detail(
             db, workspace_id, ticket.conversation_id
         )
+    draft = await latest_draft(db, workspace_id, ticket.id)
     return TicketDetail(
         **_summary(ticket, contact, assignee).model_dump(),
         description=ticket.description,
@@ -304,12 +344,13 @@ async def ticket_detail(
             else None
         ),
         conversation=conversation,
+        draft=ReplyDraftOut.model_validate(draft) if draft else None,
+        actions=await approvals_service.actions_for_ticket(db, workspace_id, ticket.id),
+        tool_calls=await tool_calls_for_ticket(db, ticket),
     )
 
 
-async def update_ticket(
-    db: AsyncSession, workspace_id: uuid.UUID, ticket_id: uuid.UUID, changes: TicketUpdate
-) -> Ticket:
+async def get_ticket(db: AsyncSession, workspace_id: uuid.UUID, ticket_id: uuid.UUID) -> Ticket:
     ticket = (
         await db.execute(
             select(Ticket).where(Ticket.workspace_id == workspace_id, Ticket.id == ticket_id)
@@ -317,6 +358,13 @@ async def update_ticket(
     ).scalar_one_or_none()
     if ticket is None:
         raise _not_found()
+    return ticket
+
+
+async def update_ticket(
+    db: AsyncSession, workspace_id: uuid.UUID, ticket_id: uuid.UUID, changes: TicketUpdate
+) -> Ticket:
+    ticket = await get_ticket(db, workspace_id, ticket_id)
 
     fields = changes.model_fields_set
     if "assignee_id" in fields and changes.assignee_id is not None:

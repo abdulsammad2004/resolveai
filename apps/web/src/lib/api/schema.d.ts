@@ -319,7 +319,8 @@ export interface paths {
         put?: never;
         /**
          * Create Ticket
-         * @description A manual ticket, classified like a widget message (intent and priority).
+         * @description A manual ticket, classified like a widget message (intent and priority). A reply
+         *     draft is written in the background.
          */
         post: operations["create_ticket_api_v1_tickets_post"];
         delete?: never;
@@ -344,6 +345,46 @@ export interface paths {
         head?: never;
         /** Update Ticket */
         patch: operations["update_ticket_api_v1_tickets__ticket_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/regenerate-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Draft
+         * @description Write a fresh draft in the background; poll the ticket until it appears.
+         */
+        post: operations["regenerate_draft_api_v1_tickets__ticket_id__regenerate_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Actions
+         * @description Newest first, across all tickets, with each ticket's subject.
+         */
+        get: operations["list_actions_api_v1_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/mock-orders/seed": {
@@ -458,6 +499,99 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionList */
+        ActionList: {
+            /** Items */
+            items: components["schemas"]["ActionListItem"][];
+        };
+        /** ActionListItem */
+        ActionListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Arguments */
+            arguments: {
+                [key: string]: unknown;
+            };
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "write" | "sensitive";
+            /** Reason */
+            reason: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Ticket Subject */
+            ticket_subject: string;
+        };
+        /** ActionRequestOut */
+        ActionRequestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Arguments */
+            arguments: {
+                [key: string]: unknown;
+            };
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "write" | "sensitive";
+            /** Reason */
+            reason: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** AuthResponse */
         AuthResponse: {
             user: components["schemas"]["UserOut"];
@@ -753,7 +887,12 @@ export interface components {
             /** Grounded */
             grounded: boolean | null;
             /** Route */
-            route?: ("answer" | "fallback" | "small_talk" | "handoff") | null;
+            route?: ("answer" | "fallback" | "small_talk" | "handoff" | "agent") | null;
+            /**
+             * Tools Used
+             * @default []
+             */
+            tools_used: string[];
             /** Classification */
             classification?: {
                 [key: string]: unknown;
@@ -804,6 +943,42 @@ export interface components {
             quantity: number;
             /** Unit Price */
             unit_price: string;
+        };
+        /** RegenerateDraftOut */
+        RegenerateDraftOut: {
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Queued */
+            queued: boolean;
+        };
+        /** ReplyDraftOut */
+        ReplyDraftOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Content */
+            content: string;
+            /** Citations */
+            citations: components["schemas"]["Citation"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "edited" | "rejected" | "sent" | "superseded" | "failed";
+            /** Prompt Version */
+            prompt_version: string | null;
+            /** Error */
+            error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * Role
@@ -905,7 +1080,7 @@ export interface components {
              * Intent
              * @enum {string}
              */
-            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "complaint" | "account_change" | "other";
+            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "other";
             /**
              * Priority
              * @enum {string}
@@ -941,6 +1116,17 @@ export interface components {
             description: string | null;
             classification: components["schemas"]["ClassificationOut"] | null;
             conversation: components["schemas"]["ConversationDetail"] | null;
+            draft?: components["schemas"]["ReplyDraftOut"] | null;
+            /**
+             * Actions
+             * @default []
+             */
+            actions: components["schemas"]["ActionRequestOut"][];
+            /**
+             * Tool Calls
+             * @default []
+             */
+            tool_calls: components["schemas"]["ToolCallOut"][];
         };
         /** TicketPage */
         TicketPage: {
@@ -963,7 +1149,7 @@ export interface components {
              * Intent
              * @enum {string}
              */
-            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "complaint" | "account_change" | "other";
+            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "other";
             /**
              * Priority
              * @enum {string}
@@ -1007,6 +1193,30 @@ export interface components {
             priority?: ("low" | "normal" | "high" | "urgent") | null;
             /** Assignee Id */
             assignee_id?: string | null;
+        };
+        /** ToolCallOut */
+        ToolCallOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Tool Name */
+            tool_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "not_found" | "invalid" | "proposed" | "denied" | "error";
+            /** Result Summary */
+            result_summary: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** UserOut */
         UserOut: {
@@ -1082,7 +1292,12 @@ export interface components {
             /** Grounded */
             grounded: boolean | null;
             /** Route */
-            route?: ("answer" | "fallback" | "small_talk" | "handoff") | null;
+            route?: ("answer" | "fallback" | "small_talk" | "handoff" | "agent") | null;
+            /**
+             * Tools Used
+             * @default []
+             */
+            tools_used: string[];
             /**
              * Created At
              * Format: date-time
@@ -1831,7 +2046,7 @@ export interface operations {
             query?: {
                 status?: ("new" | "triaged" | "awaiting_review" | "replied" | "resolved") | null;
                 priority?: ("low" | "normal" | "high" | "urgent") | null;
-                intent?: ("greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "complaint" | "account_change" | "other") | null;
+                intent?: ("greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "other") | null;
                 assignee?: "me" | "unassigned" | "any";
                 cursor?: string | null;
                 limit?: number;
@@ -1948,6 +2163,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_draft_api_v1_tickets__ticket_id__regenerate_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegenerateDraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_actions_api_v1_actions_get: {
+        parameters: {
+            query?: {
+                status?: ("proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionList"];
                 };
             };
             /** @description Validation Error */
