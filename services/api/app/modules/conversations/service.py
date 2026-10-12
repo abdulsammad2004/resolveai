@@ -262,6 +262,7 @@ async def add_assistant_message(
     escalate: bool,
     llm_call_id: uuid.UUID | None = None,
     prompt_version: str | None = None,
+    tools_used: list[str] | None = None,
 ) -> Message:
     """Store an assistant reply. `escalate` hands the conversation to a person."""
     conversation = await get_conversation(db, workspace_id, conversation_id)
@@ -275,6 +276,7 @@ async def add_assistant_message(
         route=route,
         llm_call_id=llm_call_id,
         prompt_version=prompt_version,
+        tools_used=tools_used or [],
         created_at=now(),
     )
     db.add(message)
@@ -333,6 +335,7 @@ async def widget_conversation(
                 citations=m.citations,  # type: ignore[arg-type]
                 grounded=m.grounded,
                 route=m.route,  # type: ignore[arg-type]
+                tools_used=m.tools_used or [],
                 created_at=m.created_at,
                 rating=feedback[m.id].rating if m.id in feedback else None,  # type: ignore[arg-type]
             )
@@ -517,6 +520,7 @@ async def conversation_detail(
                 citations=m.citations,  # type: ignore[arg-type]
                 grounded=m.grounded,
                 route=m.route,  # type: ignore[arg-type]
+                tools_used=m.tools_used or [],
                 classification=m.classification,
                 prompt_version=m.prompt_version,
                 created_at=m.created_at,

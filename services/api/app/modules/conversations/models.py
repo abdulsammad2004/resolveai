@@ -44,6 +44,7 @@ class MessageRoute(enum.StrEnum):
     FALLBACK = "fallback"  # no sources / no valid citation / budget: handed to a person
     SMALL_TALK = "small_talk"  # fixed reply to a greeting or thanks
     HANDOFF = "handoff"  # routed straight to the team as a ticket
+    AGENT = "agent"  # answered by the agent loop with read-only tools (e.g. order lookup)
 
 
 class Rating(enum.StrEnum):
@@ -115,7 +116,7 @@ class Message(IdMixin, TimestampMixin, Base):
             "role IN ('customer', 'assistant', 'agent', 'system')", name="role"
         ),
         CheckConstraint(
-            "route IN ('answer', 'fallback', 'small_talk', 'handoff')", name="route"
+            "route IN ('answer', 'fallback', 'small_talk', 'handoff', 'agent')", name="route"
         ),
         Index(
             "ix_messages_workspace_id_conversation_id_created_at",
@@ -145,6 +146,10 @@ class Message(IdMixin, TimestampMixin, Base):
     classification: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # Assistant messages: how the reply was produced (MessageRoute).
     route: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Assistant messages: names of the tools the agent ran for this reply.
+    tools_used: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
 
 
 class Feedback(IdMixin, TimestampMixin, Base):

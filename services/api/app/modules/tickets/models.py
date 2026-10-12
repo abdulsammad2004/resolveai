@@ -2,7 +2,7 @@ import enum
 import uuid
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Float, ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, Float, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -67,3 +67,48 @@ class Ticket(IdMixin, TimestampMixin, Base):
     classification: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
+class DraftStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    EDITED = "edited"
+    REJECTED = "rejected"
+    SENT = "sent"
+    SUPERSEDED = "superseded"  # replaced by a newer draft before anyone reviewed it
+    FAILED = "failed"  # drafting gave up; `error` says why
+
+
+class ReplyDraft(IdMixin, TimestampMixin, Base):
+    """An AI-proposed reply. Never sent on its own: a person reviews it first."""
+
+    __tablename__ = "reply_drafts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'edited', 'rejected', 'sent', 'superseded', "
+            "'failed')",
+            name="status",
+        ),
+        Index("ix_reply_drafts_workspace_id_ticket_id", "workspace_id", "ticket_id", "created_at"),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # [{source_id, chunk_id, document_id, title, heading_path, snippet}]
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=DraftStatus.PENDING)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("llm_calls.id", ondelete="SET NULL"), nullable=True
+    )
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Fingerprint of what the draft was written from (ticket, messages, prompt), so an
+    # unchanged ticket isn't drafted twice.
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

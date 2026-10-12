@@ -19,7 +19,11 @@ export type FinalAnswer = {
   citations: Citation[];
   grounded: boolean | null;
   route: NonNullable<WidgetMessage["route"]>;
+  tools_used: string[];
 };
+
+/** The SSE `status` event: what the assistant is doing while tools run. */
+export type AnswerStatus = { text: string; tool: string };
 
 export class WidgetError extends Error {
   constructor(
@@ -75,13 +79,15 @@ export function sendFeedback(token: string, messageId: string, rating: Rating): 
 }
 
 /**
- * POST a message and read the answer stream. `onToken` gets raw text as it arrives; the
- * resolved value is the `final` event, which replaces whatever was streamed.
+ * POST a message and read the answer stream. `onToken` gets raw text as it arrives and
+ * `onStatus` what the assistant is checking (e.g. "Checking your order…"); the resolved
+ * value is the `final` event, which replaces whatever was streamed.
  */
 export async function sendMessage(
   token: string,
   content: string,
   onToken: (text: string) => void,
+  onStatus?: (status: AnswerStatus) => void,
   signal?: AbortSignal,
 ): Promise<FinalAnswer> {
   const response = await fetch("/api/v1/widget/messages", {
@@ -101,6 +107,8 @@ export async function sendMessage(
   for await (const { event, data } of readSse(response.body, signal)) {
     if (event === "token") {
       onToken((JSON.parse(data) as { text: string }).text);
+    } else if (event === "status") {
+      onStatus?.(JSON.parse(data) as AnswerStatus);
     } else if (event === "final") {
       return JSON.parse(data) as FinalAnswer;
     } else if (event === "error") {

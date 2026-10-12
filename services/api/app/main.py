@@ -5,6 +5,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
+from app.api.v1.actions import router as actions_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.documents import router as documents_router
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(knowledge_router)
     api_v1.include_router(conversations_router)
     api_v1.include_router(tickets_router)
+    api_v1.include_router(actions_router)
     api_v1.include_router(mock_orders_router)
     api_v1.include_router(widget_router)
 

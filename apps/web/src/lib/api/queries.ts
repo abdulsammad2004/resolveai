@@ -33,6 +33,11 @@ export type TicketPriority = TicketSummary["priority"];
 export type TicketIntent = TicketSummary["intent"];
 export type Classification = components["schemas"]["ClassificationOut"];
 export type MockOrder = components["schemas"]["MockOrderOut"];
+export type ReplyDraft = components["schemas"]["ReplyDraftOut"];
+export type ProposedAction = components["schemas"]["ActionRequestOut"];
+export type ActionListItem = components["schemas"]["ActionListItem"];
+export type ActionStatus = ProposedAction["status"];
+export type ToolCallRecord = components["schemas"]["ToolCallOut"];
 
 const DOCUMENTS_PAGE_SIZE = 100;
 const DOCUMENTS_MAX_PAGES = 50;
@@ -51,6 +56,9 @@ export const queryKeys = {
   ticketList: (wid: string, filters: TicketFilters) => [wid, "tickets", "list", filters] as const,
   ticket: (wid: string, id: string) => [wid, "tickets", "detail", id] as const,
   mockOrders: (wid: string) => [wid, "mock-orders"] as const,
+  actions: (wid: string) => [wid, "actions"] as const,
+  actionList: (wid: string, status: ActionStatus | "all") =>
+    [wid, "actions", "list", status] as const,
 };
 
 export type TicketFilters = {
@@ -373,6 +381,8 @@ export function useUpdateConversationStatus() {
 
 const TICKETS_PAGE_SIZE = 25;
 const TICKETS_POLL_MS = 10_000;
+// While a reply draft is being written in the background.
+const DRAFT_POLL_MS = 3_000;
 
 /** Inbox pages: urgent first, then newest. Polled so widget handoffs appear on their own. */
 export function useTickets(filters: TicketFilters) {
@@ -416,7 +426,11 @@ export function useTicketCounts() {
   });
 }
 
-export function useTicket(id: string | null) {
+/** One ticket. Polls faster while `awaitingDraft` says a reply draft is being written. */
+export function useTicket(
+  id: string | null,
+  { awaitingDraft }: { awaitingDraft?: (ticket: TicketDetail) => boolean } = {},
+) {
   const wid = useWorkspaceId();
   return useQuery({
     queryKey: queryKeys.ticket(wid, id ?? "none"),
@@ -428,7 +442,45 @@ export function useTicket(id: string | null) {
       if (!data) throw toApiError(error, response);
       return data;
     },
-    refetchInterval: TICKETS_POLL_MS,
+    refetchInterval: (query) =>
+      query.state.data && awaitingDraft?.(query.state.data) ? DRAFT_POLL_MS : TICKETS_POLL_MS,
+  });
+}
+
+/** Ask for a fresh AI draft. It is written in the background; poll the ticket for it. */
+export function useRegenerateDraft() {
+  const wid = useWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error, response } = await api.POST(
+        "/api/v1/tickets/{ticket_id}/regenerate-draft",
+        { params: { path: { ticket_id: id } } },
+      );
+      if (!data) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.ticket(wid, result.ticket_id) });
+    },
+  });
+}
+
+const ACTIONS_POLL_MS = 10_000;
+
+/** Actions the AI proposed across all tickets, newest first (the Approvals page). */
+export function useActions(status: ActionStatus | "all" = "proposed") {
+  const wid = useWorkspaceId();
+  return useQuery({
+    queryKey: queryKeys.actionList(wid, status),
+    queryFn: async (): Promise<ActionListItem[]> => {
+      const { data, error, response } = await api.GET("/api/v1/actions", {
+        params: { query: { status: status === "all" ? undefined : status } },
+      });
+      if (!data) throw toApiError(error, response);
+      return data.items;
+    },
+    refetchInterval: ACTIONS_POLL_MS,
   });
 }
 

@@ -7,16 +7,22 @@ import logging
 from typing import Any, ClassVar
 
 from arq.connections import RedisSettings
-
-from app.ai.embeddings import get_embedding_client
-from app.core.config import get_settings
-from app.core.database import engine
-from app.core.storage import get_storage
+from arq.worker import func
 
 # Register every model on the shared metadata so foreign keys (e.g. documents -> users)
 # resolve in the worker process, which doesn't import the API routers.
+from app.ai import usage as usage_models  # noqa: F401
+from app.ai.embeddings import get_embedding_client
+from app.ai.tools import models as tool_models  # noqa: F401
+from app.core.config import get_settings
+from app.core.database import engine
+from app.core.storage import get_storage
+from app.modules.approvals import models as approvals_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.conversations import models as conversations_models  # noqa: F401
+from app.modules.tickets import models as tickets_models  # noqa: F401
 from app.modules.workspaces import models as workspaces_models  # noqa: F401
+from app.workers import drafting
 from app.workers.ingestion import JOB_TIMEOUT_S, MAX_TRIES, ingest_document
 
 # arq configures its own loggers; give the app's loggers a handler too.
@@ -37,7 +43,15 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Any]] = [ingest_document]
+    functions: ClassVar[list[Any]] = [
+        ingest_document,
+        func(
+            drafting.process_ticket,
+            name="process_ticket",
+            max_tries=drafting.MAX_TRIES,
+            timeout=drafting.JOB_TIMEOUT_S,
+        ),
+    ]
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     on_startup = startup
     on_shutdown = shutdown

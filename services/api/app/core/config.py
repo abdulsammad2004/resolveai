@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Chat model. Nothing calls it yet; LLM_CHAT_MODEL is checked when a call is made.
     llm_provider: Literal["openai", "fake"] = "openai"
     llm_chat_model: str = ""
+    # reasoning_effort sent with tool-calling requests. GPT-6 Sol/Luna only allow function
+    # tools in Chat Completions with "none"; empty sends nothing (for models without "none").
+    llm_tools_reasoning_effort: str = "none"
 
     # USD per million tokens, used to cost every row in llm_calls.
     embedding_price_per_mtok: Decimal = Decimal("0.02")

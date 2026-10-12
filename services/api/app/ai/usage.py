@@ -18,7 +18,15 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.ai.embeddings import BATCH_SIZE, EmbeddingClient
-from app.ai.llm import ChatMessage, ModelT, StreamUsage, UsageReportingLLMClient, parse_structured
+from app.ai.llm import (
+    ChatMessage,
+    ModelT,
+    StreamUsage,
+    ToolCompletion,
+    ToolSpec,
+    UsageReportingLLMClient,
+    parse_structured,
+)
 from app.core.config import get_settings
 from app.core.database import Base, IdMixin, TimestampMixin
 from app.core.deps import tenant_session
@@ -35,6 +43,8 @@ class LLMPurpose(enum.StrEnum):
     EMBED_QUERY = "embed_query"
     CHAT = "chat"
     CLASSIFY = "classify"
+    AGENT = "agent"  # widget agent turns (tool calling)
+    DRAFT = "draft"  # ticket reply drafts (tool calling)
 
 
 class LLMCallStatus(enum.StrEnum):
@@ -271,6 +281,20 @@ class MeteredLLMClient:
         self, messages: list[ChatMessage], schema: type[ModelT]
     ) -> ModelT:
         return parse_structured(await self._complete(messages, schema), schema)
+
+    async def complete_with_tools(
+        self, messages: list[ChatMessage], tools: list[ToolSpec]
+    ) -> ToolCompletion:
+        started = time.perf_counter()
+        try:
+            completion = await self.inner.complete_with_tools(messages, tools)
+        except Exception as exc:
+            await self._record(started, 0, 0, LLMCallStatus.ERROR, _error_type(exc))
+            raise
+        await self._record(
+            started, completion.input_tokens, completion.output_tokens, LLMCallStatus.OK
+        )
+        return completion
 
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         started = time.perf_counter()

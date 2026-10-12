@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.ai.decisions import (
+    CONTEXT_CHARS,
     INTENTS,
     PRIORITIES,
     CloudflareClefClient,
@@ -86,7 +87,8 @@ async def llm_calls(engine: AsyncEngine, workspace_id: uuid.UUID) -> list[dict]:
 
 CONTEXT = [
     ContextMessage("customer", "first message, too old to send"),
-    ContextMessage("assistant", "an earlier answer"),
+    ContextMessage("customer", "where is my order?"),
+    ContextMessage("assistant", "an earlier answer " + "x" * 600),
     ContextMessage("customer", "my order arrived broken"),
 ]
 
@@ -107,9 +109,10 @@ async def test_clef_request_and_parsing(client: AsyncClient, app_role_engine: As
     body = json.loads(request.content)
     assert body["model"] == "clef-flash"
     assert body["state"]["latest_customer_message"] == "I want my money back"
-    # Minimum context: only the previous two messages.
+    # Small context: the previous three messages, each cut to CONTEXT_CHARS.
     assert [m["text"] for m in body["state"]["previous_messages"]] == [
-        "an earlier answer",
+        "where is my order?",
+        ("an earlier answer " + "x" * 600)[:CONTEXT_CHARS],
         "my order arrived broken",
     ]
     questions = body["questions"]
@@ -172,7 +175,7 @@ async def test_clef_retries_once_then_llm_fallback_is_used_and_logged(
         ("cloudflare", "classify", "error"),
         ("fake", "classify", "ok"),
     ]
-    assert rows[1]["prompt_version"] == "classify_v1"
+    assert rows[1]["prompt_version"] == "classify_v2"
 
 
 async def test_timeouts_and_bad_output_raise_decision_error(client: AsyncClient) -> None:
