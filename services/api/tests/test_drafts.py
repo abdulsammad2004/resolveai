@@ -108,7 +108,7 @@ async def test_process_ticket_creates_a_pending_draft_with_citations(
     draft = ticket["draft"]
     assert draft["status"] == "pending"
     assert draft["content"] == DRAFT_TEXT
-    assert draft["prompt_version"] == "draft_v2"
+    assert draft["prompt_version"] == "draft_v3"
     assert draft["error"] is None
     [citation] = draft["citations"]
     assert citation["source_id"] == "S1"
@@ -116,18 +116,19 @@ async def test_process_ticket_creates_a_pending_draft_with_citations(
     assert [c["tool_name"] for c in ticket["tool_calls"]] == ["search_knowledge"]
     assert ticket["tool_calls"][0]["result_summary"].startswith("Searched the help articles")
     assert ticket["actions"] == []
-    # All four tools were offered to the drafting agent.
+    # All five tools were offered to the drafting agent.
     assert llm.tool_requests[0][1] == [
         "search_knowledge",
         "get_order_status",
         "request_refund",
+        "request_cancellation",
         "escalate_to_human",
     ]
     [row] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM reply_drafts")
     [call] = await rows(
         app_role_engine, owner.workspace_id, f"SELECT * FROM llm_calls WHERE id = '{row['llm_call_id']}'"
     )
-    assert (call["purpose"], call["prompt_version"]) == ("draft", "draft_v2")
+    assert (call["purpose"], call["prompt_version"]) == ("draft", "draft_v3")
 
 
 async def test_running_twice_does_not_duplicate_but_regenerate_does(
@@ -233,7 +234,7 @@ async def test_agent_proposing_a_refund_creates_a_proposed_action_only(
     )
     # Nothing was executed.
     [row] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM action_requests")
-    assert row["result"] is None and row["approved_by"] is None
+    assert row["result"] is None and row["decided_by"] is None
     order = await rows(
         app_role_engine, owner.workspace_id, f"SELECT status FROM mock_orders WHERE order_number = '{ORDER}'"
     )

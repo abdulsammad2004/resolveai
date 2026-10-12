@@ -13,6 +13,7 @@ from app.core.database import Base
 
 # Import model modules here for Alembic autogenerate to discover:
 from app.modules.approvals import models as approvals_models  # noqa: F401
+from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.conversations import models as conversations_models  # noqa: F401
 from app.modules.knowledge import models as knowledge_models  # noqa: F401

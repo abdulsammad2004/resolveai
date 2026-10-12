@@ -80,3 +80,14 @@ class MemberOut(BaseModel):
     email: str
     full_name: str
     role: Role
+
+
+class DemoToolsOut(BaseModel):
+    enabled: bool
+
+
+class DemoResetOut(BaseModel):
+    # Rows deleted per table, in the order they were deleted.
+    deleted: dict[str, int]
+    # Sample orders put back to their seeded state (refunds and cancellations undone).
+    mock_orders_reset: int

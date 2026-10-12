@@ -163,6 +163,31 @@ def _describe_refund(args: RequestRefundArgs) -> str:
     return f"Refund request for order {_normalize_number(args.order_number)}{amount}"
 
 
+# request_cancellation (sensitive) -----------------------------------------------------------
+
+
+class RequestCancellationArgs(_Args):
+    order_number: str = ORDER_NUMBER
+    reason: str = REASON
+
+
+async def _check_cancellation(
+    db: AsyncSession, ctx: ToolContext, args: RequestCancellationArgs
+) -> str | None:
+    # Whether the order can still be cancelled (not shipped) is decided when a teammate
+    # approves it, against the order's state at that moment.
+    if not ctx.customer_asked_cancel:
+        return "A cancellation can only be proposed when the customer asked for one."
+    order = await _find_order(db, ctx, args.order_number)
+    if order is None:
+        return "No order with that number was found."
+    if ctx.contact_email and not _same_email(order.contact_email, ctx.contact_email):
+        return "That order doesn't belong to this customer."
+    if order.status == OrderStatus.CANCELLED:
+        return "That order is already cancelled."
+    return None
+
+
 # escalate_to_human (write) ------------------------------------------------------------------
 
 
@@ -236,6 +261,20 @@ REQUEST_REFUND = Tool(
     describe=_describe_refund,
     check=_check_refund,
 )
+REQUEST_CANCELLATION = Tool(
+    name="request_cancellation",
+    description=(
+        "Propose cancelling an order. This does NOT cancel anything: it creates a request a "
+        "teammate must approve. Only use it when the customer asked to cancel the order."
+    ),
+    input_model=RequestCancellationArgs,
+    risk=Risk.SENSITIVE,
+    status_text="Preparing a cancellation request…",
+    describe=lambda args: (
+        f"Cancellation request for order {_normalize_number(args.order_number)}"
+    ),
+    check=_check_cancellation,
+)
 ESCALATE_TO_HUMAN = Tool(
     name="escalate_to_human",
     description=(
@@ -268,6 +307,7 @@ REGISTRY: dict[str, Tool] = {
         SEARCH_KNOWLEDGE,
         GET_ORDER_STATUS,
         REQUEST_REFUND,
+        REQUEST_CANCELLATION,
         ESCALATE_TO_HUMAN,
         HAND_OFF_TO_TEAM,
     )
@@ -278,5 +318,6 @@ DRAFT_TOOLS: tuple[Tool, ...] = (
     SEARCH_KNOWLEDGE,
     GET_ORDER_STATUS,
     REQUEST_REFUND,
+    REQUEST_CANCELLATION,
     ESCALATE_TO_HUMAN,
 )

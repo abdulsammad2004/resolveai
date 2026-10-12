@@ -1,10 +1,19 @@
 import enum
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,3 +50,11 @@ class MockOrder(IdMixin, TimestampMixin, Base):
     total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     # [{sku, name, quantity, unit_price}]
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    refunded_amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=Decimal(0), server_default="0"
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Idempotency keys of the approved actions already applied to this order.
+    applied_action_keys: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )

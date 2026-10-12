@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     retrieval_min_score: float = Field(default=0.30, ge=-1.0, le=1.0)
     retrieval_keep: int = Field(default=5, ge=1, le=50)
 
+    # Dev/demo only: lets workspace owners wipe conversations and the inbox from Settings.
+    demo_tools_enabled: bool = False
+
     # Customer chat widget. The dev flag also allows http://localhost:3000 as a host origin.
     widget_dev_allow_localhost: bool = False
     widget_token_ttl_minutes: int = Field(default=60, ge=1, le=24 * 60)
@@ -112,6 +115,8 @@ class Settings(BaseSettings):
                 raise ValueError("REFRESH_COOKIE_SECURE must be true in production")
             if self.widget_dev_allow_localhost:
                 raise ValueError("WIDGET_DEV_ALLOW_LOCALHOST must be false in production")
+            if self.demo_tools_enabled:
+                raise ValueError("DEMO_TOOLS_ENABLED must be false in production")
         return self
 
     model_config = SettingsConfigDict(

@@ -87,7 +87,7 @@ async def test_list_detail_and_close(client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-async def test_closed_conversation_starts_fresh_widget_session(client: AsyncClient) -> None:
+async def test_closed_conversation_is_resumed_read_only(client: AsyncClient) -> None:
     owner = await signup(client, "owner@example.com")
     key = await widget_key(client, owner, [SHOP_ORIGIN])
     session = await open_widget(client, key)
@@ -102,8 +102,18 @@ async def test_closed_conversation_starts_fresh_widget_session(client: AsyncClie
         conversation_id=str(session.conversation_id),
         anonymous_id=session.anonymous_id,
     )
-    assert again.conversation_id != session.conversation_id
-    assert again.anonymous_id == session.anonymous_id
+    # Resumed so the visitor still sees it, but it takes no new messages...
+    assert again.conversation_id == session.conversation_id
+    widget = (await client.get("/api/v1/widget/conversation", headers=again.headers)).json()
+    assert widget["status"] == "closed" and widget["resolved"] is False
+    resp = await client.post(
+        "/api/v1/widget/messages", json={"content": "hello again"}, headers=again.headers
+    )
+    assert resp.status_code == 409
+    # ...the widget starts a new one for the same visitor instead.
+    fresh = await open_widget(client, key, anonymous_id=session.anonymous_id)
+    assert fresh.conversation_id != session.conversation_id
+    assert fresh.anonymous_id == session.anonymous_id
 
 
 async def test_cursor_pagination_newest_activity_first(client: AsyncClient) -> None:

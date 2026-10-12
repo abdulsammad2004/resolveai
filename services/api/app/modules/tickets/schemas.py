@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.modules.approvals.schemas import ActionRequestOut
+from app.modules.audit.schemas import AuditEventOut
 from app.modules.conversations.schemas import Citation, ContactOut, ConversationDetail
 
 TicketStatusLiteral = Literal["new", "triaged", "awaiting_review", "replied", "resolved"]
@@ -83,11 +84,49 @@ class ReplyDraftOut(BaseModel):
 
     id: uuid.UUID
     content: str
+    # What the AI wrote; empty for a reply a teammate started with "Write reply".
+    original_content: str
+    author_type: Literal["ai", "human"]
     citations: list[Citation]
     status: DraftStatusLiteral
     prompt_version: str | None
     error: str | None
+    reviewed_by: uuid.UUID | None
+    reviewed_at: datetime | None
+    rejection_reason: str | None
+    sent_at: datetime | None
     created_at: datetime
+
+
+DRAFT_CHARS = 5000
+
+
+class DraftEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=1, max_length=DRAFT_CHARS)
+
+
+class DraftCreate(BaseModel):
+    """Start a reply from scratch. It can stay empty until it is edited or sent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(default="", max_length=DRAFT_CHARS)
+
+
+class DraftSend(BaseModel):
+    """Send the draft. With `content`, that text is saved (as an edit) and sent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str | None = Field(default=None, min_length=1, max_length=DRAFT_CHARS)
+
+
+class DraftReject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class ToolCallOut(BaseModel):
@@ -105,11 +144,15 @@ class TicketDetail(TicketSummary):
     description: str | None
     classification: ClassificationOut | None
     conversation: ConversationDetail | None
+    # The customer's "Was this helpful?" answer after the ticket was resolved.
+    resolution_rating: Literal["up", "down"] | None = None
     # The newest draft that hasn't been superseded (pending, failed, ...), if any.
     draft: ReplyDraftOut | None = None
     actions: list[ActionRequestOut] = []
     # What the AI checked for this ticket and its conversation, oldest first.
     tool_calls: list[ToolCallOut] = []
+    # Reviews, decisions and changes on this ticket, oldest first.
+    activity: list[AuditEventOut] = []
 
 
 class RegenerateDraftOut(BaseModel):
