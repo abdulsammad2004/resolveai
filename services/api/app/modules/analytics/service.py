@@ -96,7 +96,7 @@ SELECT
     count(*) FILTER (
         WHERE NOT has_ticket AND answered AND last_route <> 'fallback' AND NOT thumbs_down
     ) AS contained,
-    count(*) FILTER (WHERE last_route = 'fallback') AS fallback_ended,
+    count(*) FILTER (WHERE NOT has_ticket AND last_route = 'fallback') AS fallback_ended,
     count(*) FILTER (
         WHERE NOT has_ticket AND thumbs_down AND last_route IS DISTINCT FROM 'fallback'
     ) AS thumbs_down_ended

@@ -109,7 +109,8 @@ export function ChartEmpty({ children }: { children: ReactNode }) {
   );
 }
 
-/** Change over time: thin lines, crosshair tooltip, legend for 2+ series. */
+/** Daily counts over time: straight segments with a dot per day, crosshair tooltip, legend
+ * for 2+ series. */
 export function TimeLineChart<T extends { day: string }>({
   data,
   series,
@@ -149,12 +150,12 @@ export function TimeLineChart<T extends { day: string }>({
           {series.map((s) => (
             <Line
               key={s.key}
-              type="monotone"
+              type="linear"
               dataKey={s.key}
               name={s.label}
               stroke={s.color}
               strokeWidth={2}
-              dot={false}
+              dot={{ r: 2.5, fill: s.color, stroke: s.color, strokeWidth: 0 }}
               activeDot={{ r: 4, stroke: SURFACE, strokeWidth: 2 }}
               isAnimationActive={false}
             />
@@ -170,19 +171,24 @@ export function StackedDayBars<T extends { day: string }>({
   data,
   series,
   formatValue,
+  formatAxis = formatValue,
+  axisWidth = 56,
   height = 260,
   label,
 }: {
   data: T[];
   series: SeriesSpec[];
   formatValue: (value: number) => string;
+  /** Y-axis ticks; defaults to formatValue. */
+  formatAxis?: (value: number) => string;
+  axisWidth?: number;
   height?: number;
   label: string;
 }) {
   return (
     <div role="img" aria-label={label} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -4 }} barCategoryGap="20%">
+        <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="20%">
           <CartesianGrid vertical={false} stroke={GRID} />
           <XAxis
             dataKey="day"
@@ -192,7 +198,13 @@ export function StackedDayBars<T extends { day: string }>({
             tickLine={false}
             minTickGap={24}
           />
-          <YAxis tick={AXIS} axisLine={false} tickLine={false} tickFormatter={formatValue} width={56} />
+          <YAxis
+            tick={AXIS}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={formatAxis}
+            width={axisWidth}
+          />
           <Tooltip
             cursor={{ fill: "rgba(255,255,255,0.04)" }}
             content={(props) => {

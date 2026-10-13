@@ -27,6 +27,7 @@ import {
   formatPercent,
   formatRelative,
   formatUsd,
+  formatUsdAxis,
 } from "./analytics-format";
 import {
   ChartEmpty,
@@ -163,6 +164,8 @@ export function DashboardView() {
                   data={data.llm.daily}
                   series={COST_SERIES}
                   formatValue={formatUsd}
+                  formatAxis={formatUsdAxis}
+                  axisWidth={64}
                   label={`Model cost per day over the last ${days} days`}
                 />
               )}
@@ -279,13 +282,7 @@ function KpiTiles({ data }: { data: AnalyticsOverview | undefined }) {
     {
       label: "AI-contained rate",
       value: formatPercent(c.contained_rate),
-      detail: (
-        <>
-          {formatCount(c.contained)} answered without a ticket.{" "}
-          <span className="text-bone">{formatCount(c.fallback_ended)}</span> ended on a fallback
-          {c.thumbs_down_ended > 0 && `, ${formatCount(c.thumbs_down_ended)} on a thumbs down`}.
-        </>
-      ),
+      detail: c.total ? conversationOutcomes(c) : "None in this range yet",
     },
     {
       label: "Handoff rate",
@@ -381,6 +378,20 @@ function TicketBreakdown({ data }: { data: AnalyticsOverview | undefined }) {
       )}
     </ChartCard>
   );
+}
+
+/** Disjoint parts that add up to the total: the optional ones only show when non-zero. */
+function conversationOutcomes(c: AnalyticsOverview["conversations"]): string {
+  const noReply = c.total - c.contained - c.fallback_ended - c.thumbs_down_ended - c.handed_off;
+  return [
+    `${formatCount(c.contained)} contained`,
+    `${formatCount(c.fallback_ended)} fell back, no ticket`,
+    `${formatCount(c.handed_off)} handed off`,
+    c.thumbs_down_ended > 0 && `${formatCount(c.thumbs_down_ended)} thumbs down, no ticket`,
+    noReply > 0 && `${formatCount(noReply)} no reply yet`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function CostBreakdown({ data }: { data: AnalyticsOverview | undefined }) {

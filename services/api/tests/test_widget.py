@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.ai.llm import ChatMessage, FakeLLMClient, LLMError, StreamUsage
 from app.api.v1.widget import get_chat_llm
 from app.core.config import get_settings
-from app.modules.conversations.chat import FALLBACK_MESSAGE
+from app.modules.conversations.chat import FALLBACK_MESSAGE, FALLBACK_OFFER
 from app.workers.ingestion import ingest_document
 from tests.conftest import (
     APP_ORIGIN,
@@ -279,11 +279,12 @@ async def test_no_sources_means_fallback_without_llm(
     events = await ask(client, session, "How long does shipping take?")
 
     assert [name for name, _ in events] == ["final"]
-    assert events[0][1]["content"] == FALLBACK_MESSAGE
+    assert events[0][1]["content"] == FALLBACK_OFFER
     assert events[0][1]["grounded"] is False
     assert llm.calls == 0
     [conversation] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM conversations")
-    assert conversation["status"] == "needs_human"
+    assert conversation["status"] == "open"  # offered a teammate; no ticket yet
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
     assert await rows(
         app_role_engine, owner.workspace_id, "SELECT * FROM llm_calls WHERE purpose = 'chat'"
     ) == []
@@ -307,16 +308,16 @@ async def test_answer_without_valid_citation_becomes_fallback(
     assert any(name == "token" for name, _ in events)
     final = events[-1][1]
     assert events[-1][0] == "final"
-    assert final["content"] == FALLBACK_MESSAGE
+    assert final["content"] == FALLBACK_OFFER
     assert final["grounded"] is False
     assert final["citations"] == []
     [message] = await rows(
         app_role_engine, owner.workspace_id, "SELECT * FROM messages WHERE role = 'assistant'"
     )
-    assert message["content"] == FALLBACK_MESSAGE
+    assert message["content"] == FALLBACK_OFFER
     assert message["llm_call_id"] is not None
     [conversation] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM conversations")
-    assert conversation["status"] == "needs_human"
+    assert conversation["status"] == "open"
 
 
 class FailingLLM(CountingLLM):
@@ -441,7 +442,7 @@ async def test_widget_reads_and_rates_only_its_own_conversation(
     assert resp.status_code == 200
     body = resp.json()
     assert body["id"] == str(mine.conversation_id)
-    assert [m["content"] for m in body["messages"]] == ["my question", FALLBACK_MESSAGE]
+    assert [m["content"] for m in body["messages"]] == ["my question", FALLBACK_OFFER]
 
     resp = await client.post(
         "/api/v1/widget/feedback",

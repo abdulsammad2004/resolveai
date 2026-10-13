@@ -5,9 +5,11 @@ Routing (decide_route): greetings and thanks get a fixed friendly reply; order q
 (and follow-ups to an agent reply, e.g. the customer giving their email) go to the agent
 with read-only tools; requests that need a person (refunds, complaints, account changes, or
 a high needs-human probability) become a ticket; everything else, including low-confidence
-classifications, gets a grounded RAG answer, and a RAG fallback (nothing to cite) also
-becomes a ticket. An agent run that can't answer, or a second failed order lookup, hands
-off too. Every new or reused ticket gets a reply draft job.
+classifications, gets a grounded RAG answer. Low-content messages ("nothing", "ok", "test")
+get a short clarifying reply instead of a search. A RAG fallback (nothing to cite) offers to
+pass the question to a teammate without opening a ticket; a "yes" to that offer hands off
+through hand_off_to_team. An agent run that can't answer, or a second failed order lookup,
+hands off too. Every new or reused ticket gets a reply draft job.
 
 The pipeline runs as its own task and hands SSE events to the response through a queue,
 so a customer closing the tab mid-answer does not lose the stored answer or its metering.
@@ -37,11 +39,11 @@ from app.ai.decisions import (
 )
 from app.ai.embeddings import EmbeddingClient
 from app.ai.grounding import CITATION_GROUP, extract_citations, format_source, neutralize
-from app.ai.llm import ChatMessage, UsageReportingLLMClient
+from app.ai.llm import ChatMessage, ToolCallRequest, UsageReportingLLMClient
 from app.ai.prompts import load_prompt
-from app.ai.tools.builtin import GET_ORDER_STATUS, WIDGET_TOOLS
+from app.ai.tools.builtin import GET_ORDER_STATUS, HAND_OFF_TO_TEAM, WIDGET_TOOLS
 from app.ai.tools.models import ToolCall, ToolCallStatus
-from app.ai.tools.registry import Tool, ToolContext
+from app.ai.tools.registry import Tool, ToolContext, run_tool
 from app.ai.usage import LLMPurpose, MeteredLLMClient
 from app.core.config import get_settings
 from app.core.deps import tenant_session
@@ -60,9 +62,16 @@ from app.workers.queue import JobQueue
 
 logger = logging.getLogger("app.conversations.chat")
 
+# Budget fallback: the AI can't run, so the conversation goes to the team right away.
 FALLBACK_MESSAGE = (
     "I couldn't find that in our help docs. Someone from the team can follow up here."
 )
+# RAG fallback (nothing to cite): no ticket until the customer accepts the offer.
+FALLBACK_OFFER = (
+    "I couldn't find that in our help docs. Would you like me to pass this to a teammate?"
+)
+CLARIFY_MESSAGE = "No problem! Is there anything else I can help with?"
+OFFER_HANDOFF_REASON = "The customer asked for a teammate after the help docs had no answer."
 ERROR_MESSAGE = "Something went wrong while answering. Please try again."
 HANDOFF_MESSAGE = "Thanks — I've passed this to our team and someone will follow up here."
 SMALL_TALK_REPLIES: dict[str, tuple[str, ...]] = {
@@ -81,6 +90,20 @@ SMALL_TALK_INTENTS = frozenset(SMALL_TALK_REPLIES)
 HANDOFF_INTENTS = frozenset({"refund_request", "cancel_order", "complaint", "account_change"})
 AGENT_INTENTS = frozenset({"order_status"})
 PRESSING_PRIORITIES = frozenset({"high", "urgent"})
+# Low-content messages: a few words, no question, and an intent that asks for nothing.
+LOW_CONTENT_INTENTS = SMALL_TALK_INTENTS | {"other"}
+LOW_CONTENT_MAX_WORDS = 3
+LOW_CONTENT_MAX_CHARS = 24
+# Answers to FALLBACK_OFFER: short, starting with a yes or a no, and asking nothing new.
+OFFER_REPLY_MAX_WORDS = 8
+_OFFER_YES = re.compile(
+    r"^(?:y|yes|yeah|yep|yup|ya|sure|ok|okay|please|go ahead|do it|sounds good|absolutely|"
+    r"definitely|that would be (?:great|good|nice|helpful))\b",
+    re.IGNORECASE,
+)
+_OFFER_NO = re.compile(
+    r"^(?:n|no|nope|nah|not now|not really|never mind|nevermind)\b", re.IGNORECASE
+)
 PROMPT_NAME, PROMPT_VERSION = "answer", "v1"
 AGENT_PROMPT_NAME, AGENT_PROMPT_VERSION = "agent", "v2"
 HISTORY_MESSAGES = 6
@@ -159,6 +182,40 @@ class Route(enum.StrEnum):
 def top_intent(c: Classification) -> str:
     """The most probable intent (falls back to the chosen one without probabilities)."""
     return max(c.intent_probs, key=c.intent_probs.__getitem__) if c.intent_probs else c.intent
+
+
+def is_low_content(text: str, c: Classification | None) -> bool:
+    """Conservative: "nothing", "ok", "test". Without a classification, never."""
+    if c is None:
+        return False
+    text = text.strip()
+    return (
+        len(text.split()) <= LOW_CONTENT_MAX_WORDS
+        and len(text) <= LOW_CONTENT_MAX_CHARS
+        and "?" not in text
+        and not any(ch.isdigit() for ch in text)
+        and top_intent(c) in LOW_CONTENT_INTENTS
+    )
+
+
+class OfferReply(enum.StrEnum):
+    YES = "yes"
+    NO = "no"
+    OTHER = "other"  # a new message: routed as usual
+
+
+def offer_reply(text: str) -> OfferReply:
+    """The customer's answer to FALLBACK_OFFER. Only asked for messages the classifier (which
+    sees the offer as context) routed to knowledge or small talk: a request it recognises,
+    e.g. a refund, keeps its own route."""
+    text = text.strip()
+    if "?" in text or len(text.split()) > OFFER_REPLY_MAX_WORDS:
+        return OfferReply.OTHER
+    if _OFFER_NO.match(text):
+        return OfferReply.NO
+    if _OFFER_YES.match(text):
+        return OfferReply.YES
+    return OfferReply.OTHER
 
 
 def decide_route(c: Classification | None, previous_route: str | None = None) -> Route:
@@ -283,16 +340,20 @@ class _Pipeline:
         prompt_version: str | None = None,
         tools_used: list[str] | None = None,
         fallback_reason: FallbackReason | None = None,
+        ticket_trigger: tuple[Classification | None, str] | None = None,
     ) -> None:
+        """`ticket_trigger` (classification, text) stands in for this message as a new
+        ticket's source, e.g. the question a "yes" accepted the offer for."""
         req = self.req
         ticket_id: uuid.UUID | None = None
+        classification, trigger_text = ticket_trigger or (self.classification, req.question)
         async with tenant_session(req.workspace_id) as db:
             if open_ticket:
                 conversation = await service.get_conversation(
                     db, req.workspace_id, req.conversation_id
                 )
                 ticket = await tickets_service.ensure_conversation_ticket(
-                    db, conversation, self.classification, req.question
+                    db, conversation, classification, trigger_text
                 )
                 ticket_id = ticket.id
                 logger.info(
@@ -344,11 +405,13 @@ class _Pipeline:
         llm_call_id: uuid.UUID | None = None,
         prompt_version: str | None = None,
     ) -> None:
+        # Without budget nothing could follow up on an offer, so that one goes to the team.
+        budget = reason is FallbackReason.BUDGET
         await self._save(
-            Answer(content=FALLBACK_MESSAGE),
+            Answer(content=FALLBACK_MESSAGE if budget else FALLBACK_OFFER),
             route=MessageRoute.FALLBACK,
             grounded=False,
-            open_ticket=True,
+            open_ticket=budget,
             llm_call_id=llm_call_id,
             prompt_version=prompt_version,
             fallback_reason=reason,
@@ -362,10 +425,10 @@ class _Pipeline:
             return
 
         self.classification = await self._classify()
-        previous_route = next(
-            (h.route for h in reversed(req.history) if h.role == MessageRole.ASSISTANT), None
+        previous = next(
+            (h for h in reversed(req.history) if h.role == MessageRole.ASSISTANT), None
         )
-        route = decide_route(self.classification, previous_route)
+        route = decide_route(self.classification, previous.route if previous else None)
         logger.info(
             "Widget message routed (conversation_id=%s, route=%s, intent=%s, confidence=%s)",
             req.conversation_id,
@@ -373,6 +436,22 @@ class _Pipeline:
             self.classification.intent if self.classification else None,
             self.classification.confidence if self.classification else None,
         )
+        offered = (
+            previous is not None
+            and previous.route == MessageRoute.FALLBACK
+            and previous.content == FALLBACK_OFFER
+        )
+        if offered and route in (Route.KNOWLEDGE, Route.SMALL_TALK):
+            answer = offer_reply(req.question)
+            if answer is OfferReply.YES:
+                await self._hand_off_after_offer()
+                return
+            if answer is OfferReply.NO:
+                await self._clarify()
+                return
+        if route is Route.KNOWLEDGE and is_low_content(req.question, self.classification):
+            await self._clarify()
+            return
         if route is Route.SMALL_TALK and self.classification is not None:
             reply = small_talk_reply(self.classification.intent, req.question)
             await self._save(
@@ -394,6 +473,49 @@ class _Pipeline:
             await self._answer_with_agent()
             return
         await self._answer_from_knowledge()
+
+    async def _clarify(self) -> None:
+        logger.info("Widget clarifying reply (conversation_id=%s)", self.req.conversation_id)
+        await self._save(
+            Answer(content=CLARIFY_MESSAGE),
+            route=MessageRoute.SMALL_TALK,
+            grounded=None,
+            open_ticket=False,
+        )
+
+    async def _hand_off_after_offer(self) -> None:
+        """A yes to FALLBACK_OFFER: hand off through hand_off_to_team (logged in tool_calls like
+        an agent's call), with the question the offer was for as the ticket's source."""
+        req = self.req
+        ctx = ToolContext(
+            workspace_id=req.workspace_id,
+            embedder=req.embedder,
+            conversation_id=req.conversation_id,
+        )
+        self.emit("status", {"text": HAND_OFF_TO_TEAM.status_text, "tool": HAND_OFF_TO_TEAM.name})
+        call = ToolCallRequest(
+            id=f"offer-{req.customer_message_id}",
+            name=HAND_OFF_TO_TEAM.name,
+            arguments=json.dumps({"reason": OFFER_HANDOFF_REASON}),
+        )
+        await run_tool(call, {HAND_OFF_TO_TEAM.name: HAND_OFF_TO_TEAM}, ctx)
+        if ctx.handoff_reason is None:
+            raise RuntimeError("hand_off_to_team did not hand off")
+        logger.info("Widget offer accepted (conversation_id=%s)", req.conversation_id)
+        question = next(
+            (h.content for h in reversed(req.history) if h.role == MessageRole.CUSTOMER),
+            req.question,
+        )
+        # No classification: the "yes" isn't the request, so the ticket takes the
+        # conversation's strongest one (see ensure_conversation_ticket).
+        await self._save(
+            Answer(content=HANDOFF_MESSAGE),
+            route=MessageRoute.HANDOFF,
+            grounded=None,
+            open_ticket=True,
+            tools_used=[HAND_OFF_TO_TEAM.name],
+            ticket_trigger=(None, question),
+        )
 
     async def _failed_lookups(self) -> int:
         req = self.req
