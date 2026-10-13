@@ -35,3 +35,8 @@ services/api/storage/
 /data/
 docker-data/
 volumes/
+
+# Eval reports (scripts/run_evals.py): local runs only; commit a chosen baseline.json
+services/api/evals/reports/*
+!services/api/evals/reports/.gitkeep
+!services/api/evals/reports/baseline.json

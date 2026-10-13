@@ -1,0 +1,61 @@
+# Unanswerable: the fixture docs don't cover these. The widget must fall back (offer a
+# teammate, no ticket yet) instead of answering from general knowledge.
+- id: un-001
+  category: unanswerable
+  turns: ["Do you have a physical store in Chicago?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-002
+  category: unanswerable
+  turns: ["Do you offer a student discount?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-003
+  category: unanswerable
+  turns: ["What material is the Daypack 20L made of?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-004
+  category: unanswerable
+  turns: ["Are you hiring at the moment?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-005
+  category: unanswerable
+  turns: ["Do you have a loyalty or points program?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-006
+  category: unanswerable
+  turns: ["What sizes do the hiking boots come in?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-007
+  category: unanswerable
+  turns: ["Is the canvas tote waterproof?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-008
+  category: unanswerable
+  turns: ["What are the phone hours for customer service?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-009
+  category: unanswerable
+  turns: ["Do you sell tents or sleeping bags?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-010
+  category: unanswerable
+  turns: ["Can I pick up my order from your warehouse myself?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-011
+  category: unanswerable
+  turns: ["Are your leather gloves vegan-friendly or made with real leather from ethical sources?"]
+  expect: {route: [fallback], ticket: false}
+
+- id: un-012
+  category: unanswerable
+  turns: ["Who designs your products and where are they made?"]
+  expect: {route: [fallback], ticket: false}

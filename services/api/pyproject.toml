@@ -35,6 +35,7 @@ dev = [
     "jsonschema",
     "pytest",
     "pytest-asyncio",
+    "pyyaml",
     "ruff",
 ]
 

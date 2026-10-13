@@ -2,7 +2,9 @@
 
 The primary provider is Cloudflare's Clef-flash decision model (Workers AI), which returns a
 probability for every allowed option instead of generated text. When Cloudflare isn't
-configured or a call fails, the chat LLM answers the same questions (prompt classify_v2).
+configured or a call fails, the chat LLM answers the same questions. Both are versioned
+(CLASSIFY_VERSION): Clef asks the questions in prompt classify_criteria_<version>, the LLM uses
+prompt classify_<version>. Older versions stay in the repo so evals can compare them.
 
 Only the minimum context leaves the system: the message plus the previous two messages of the
 conversation. Message text is never logged; llm_calls rows carry tokens, cost and latency only.
@@ -14,10 +16,10 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, get_args
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from app.ai.llm import ChatMessage, LLMError, UsageReportingLLMClient, get_llm_client
 from app.ai.prompts import load_prompt
@@ -42,39 +44,15 @@ Intent = Literal[
     "cancel_order",
     "complaint",
     "account_change",
+    "account_security",
+    "off_topic",
     "other",
 ]
 Priority = Literal["low", "normal", "high", "urgent"]
-
-INTENT_CRITERIA: dict[str, str] = {
-    "greeting": "Only says hello or opens the conversation, with no request yet.",
-    "thanks": "Only thanks the team or says goodbye, with no new request.",
-    "knowledge_question": (
-        "Asks a general question that help articles or policies could answer "
-        "(shipping times, return policy, how something works)."
-    ),
-    "order_status": "Asks where a specific order is, when it arrives, or for tracking.",
-    "refund_request": "Asks for money back, a refund, or a return of a specific purchase.",
-    "cancel_order": "Asks to cancel a specific order, or to change one before it ships.",
-    "complaint": "Expresses dissatisfaction with a product, delivery or the service.",
-    "account_change": (
-        "Asks to change account details, email, password, address or subscription, "
-        "or reports an account access problem."
-    ),
-    "other": "Anything that fits none of the other options.",
-}
-PRIORITY_CRITERIA: dict[str, str] = {
-    "low": "General curiosity or feedback; nothing is blocked.",
-    "normal": "A routine question or request that can wait for a normal reply.",
-    "high": "The customer is blocked, upset, or money or an order is at risk.",
-    "urgent": (
-        "Safety issue, legal threat, payment taken twice, account hacked, or the customer is "
-        "locked out of their account."
-    ),
-}
-NEEDS_HUMAN_QUESTION = "Does this need a human agent rather than an automated answer?"
-INTENTS: tuple[str, ...] = tuple(INTENT_CRITERIA)
-PRIORITIES: tuple[str, ...] = tuple(PRIORITY_CRITERIA)
+ClassifyVersion = Literal["v2", "v3"]
+# Every intent any classifier version can return. A version's own options are in its spec.
+INTENTS: tuple[str, ...] = get_args(Intent)
+PRIORITIES: tuple[str, ...] = get_args(Priority)
 
 CLEF_MODEL = "clef-flash"
 CLEF_MODEL_ID = "@cf/cloudflare/clef-flash"
@@ -86,7 +64,13 @@ CLEF_ATTEMPTS = 2  # one retry
 CONTEXT_MESSAGES = 3
 CONTEXT_CHARS = 400
 MAX_TEXT_CHARS = 2000
-PROMPT_NAME, PROMPT_VERSION = "classify", "v2"
+PROMPT_NAME = "classify"
+CRITERIA_NAME = "classify_criteria"
+# Account security always goes to a person, at high priority or above (deterministic, after
+# the model: the prompt asks for it, this guarantees it).
+SECURITY_INTENT = "account_security"
+SECURITY_MIN_NEEDS_HUMAN = 0.95
+SECURITY_PRIORITY_FLOOR = "high"
 
 
 class DecisionError(Exception):
@@ -139,28 +123,113 @@ def _normalize(probs: dict[str, Any], options: tuple[str, ...]) -> dict[str, flo
     return {o: round(v / total, 4) for o, v in values.items()}
 
 
+# Versioned criteria ------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Question:
+    instructions: str
+    criteria: dict[str, str]
+
+
+@dataclass(frozen=True)
+class ClassifierSpec:
+    """One classifier version: the questions (prompt classify_criteria_<version>, used as-is by
+    Clef) and the LLM prompt classify_<version>."""
+
+    version: str
+    intent: Question
+    priority: Question
+    needs_human: Question
+
+    @property
+    def intents(self) -> tuple[str, ...]:
+        return tuple(self.intent.criteria)
+
+    @property
+    def priorities(self) -> tuple[str, ...]:
+        return tuple(self.priority.criteria)
+
+
+def parse_criteria(text: str) -> dict[str, Question]:
+    """`# name` headings, each followed by one instruction line and `- option: criterion`
+    bullets."""
+    questions: dict[str, Question] = {}
+    name: str | None = None
+    instructions: list[str] = []
+    criteria: dict[str, str] = {}
+
+    def close() -> None:
+        if name is not None:
+            questions[name] = Question(" ".join(instructions), dict(criteria))
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("# "):
+            close()
+            name, instructions, criteria = line[2:].strip(), [], {}
+        elif line.startswith("- ") and ":" in line:
+            option, criterion = line[2:].split(":", 1)
+            criteria[option.strip()] = criterion.strip()
+        else:
+            instructions.append(line)
+    close()
+    return questions
+
+
+@lru_cache
+def classifier_spec(version: str) -> ClassifierSpec:
+    questions = parse_criteria(load_prompt(CRITERIA_NAME, version).text)
+    try:
+        spec = ClassifierSpec(
+            version=version,
+            intent=questions["intent"],
+            priority=questions["priority"],
+            needs_human=questions["needs_human"],
+        )
+    except KeyError as exc:
+        raise ValueError(f"{CRITERIA_NAME}_{version} is missing a question: {exc}") from exc
+    unknown = set(spec.intents) - set(INTENTS) or set(spec.priorities) - set(PRIORITIES)
+    if unknown:
+        raise ValueError(f"{CRITERIA_NAME}_{version} has unknown options: {sorted(unknown)}")
+    return spec
+
+
+def _version(version: str | None) -> str:
+    return version or get_settings().classify_version
+
+
+def apply_policy(c: Classification) -> Classification:
+    """Deterministic rules on top of the model's answer."""
+    if c.intent == SECURITY_INTENT:
+        c.needs_human_prob = max(c.needs_human_prob, SECURITY_MIN_NEEDS_HUMAN)
+        if PRIORITIES.index(c.priority) < PRIORITIES.index(SECURITY_PRIORITY_FLOOR):
+            c.priority = SECURITY_PRIORITY_FLOOR
+    return c
+
+
 # Cloudflare Clef ----------------------------------------------------------------------------
 
 
-def clef_questions() -> dict[str, Any]:
+def clef_questions(version: str | None = None) -> dict[str, Any]:
+    spec = classifier_spec(_version(version))
     return {
         "intent": {
             "type": "choice",
-            "instructions": "What is the customer's latest message mainly about?",
-            "criteria": INTENT_CRITERIA,
+            "instructions": spec.intent.instructions,
+            "criteria": spec.intent.criteria,
         },
         "priority": {
             "type": "choice",
-            "instructions": "How urgently does the customer's latest message need attention?",
-            "criteria": PRIORITY_CRITERIA,
+            "instructions": spec.priority.instructions,
+            "criteria": spec.priority.criteria,
         },
         "needs_human": {
             "type": "noul",
-            "instructions": NEEDS_HUMAN_QUESTION,
-            "criteria": {
-                "true": "A person must act, decide, investigate or reassure.",
-                "false": "An automated reply or a help article answers it fully.",
-            },
+            "instructions": spec.needs_human.instructions,
+            "criteria": spec.needs_human.criteria,
         },
     }
 
@@ -176,7 +245,9 @@ class CloudflareClefClient:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         meter: bool = True,
+        version: str | None = None,
     ) -> None:
+        self.spec = classifier_spec(_version(version))
         self._url = CLEF_URL.format(account_id=account_id)
         self._token = api_token
         self._transport = transport
@@ -193,7 +264,7 @@ class CloudflareClefClient:
                 ],
                 "latest_customer_message": text[:MAX_TEXT_CHARS],
             },
-            "questions": clef_questions(),
+            "questions": clef_questions(self.spec.version),
         }
 
     async def _post(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -247,12 +318,13 @@ class CloudflareClefClient:
             intent = answers["intent"]
             priority = answers["priority"]
             needs_human = answers["needs_human"]
-            intent_probs = _normalize(intent["probabilities"], INTENTS)
-            priority_probs = _normalize(priority["probabilities"], PRIORITIES)
-            chosen_intent = intent["choice"] if intent["choice"] in INTENTS else max(
+            intents, priorities = self.spec.intents, self.spec.priorities
+            intent_probs = _normalize(intent["probabilities"], intents)
+            priority_probs = _normalize(priority["probabilities"], priorities)
+            chosen_intent = intent["choice"] if intent["choice"] in intents else max(
                 intent_probs, key=intent_probs.__getitem__
             )
-            chosen_priority = priority["choice"] if priority["choice"] in PRIORITIES else max(
+            chosen_priority = priority["choice"] if priority["choice"] in priorities else max(
                 priority_probs, key=priority_probs.__getitem__
             )
             result = Classification(
@@ -272,7 +344,7 @@ class CloudflareClefClient:
                 raise
             raise DecisionError("Clef response could not be read") from exc
         await self._record(workspace_id, started, input_tokens, None)
-        return result
+        return apply_policy(result)
 
     async def _record(
         self,
@@ -291,6 +363,7 @@ class CloudflareClefClient:
             input_tokens=input_tokens,
             output_tokens=0,
             cost_usd=clef_cost(input_tokens),
+            prompt_version=f"{CRITERIA_NAME}_{self.spec.version}",
             latency_ms=(time.perf_counter() - started) * 1000,
             status=LLMCallStatus.ERROR if error else LLMCallStatus.OK,
             error_type=type(error.__cause__ or error).__name__[:100] if error else None,
@@ -302,11 +375,22 @@ class CloudflareClefClient:
 
 
 class LLMVerdict(BaseModel):
-    intent: Intent
+    intent: str
     intent_confidence: float = Field(ge=0.0, le=1.0)
     priority: Priority
     priority_confidence: float = Field(ge=0.0, le=1.0)
     needs_human_probability: float = Field(ge=0.0, le=1.0)
+
+
+@lru_cache
+def verdict_model(version: str) -> type[LLMVerdict]:
+    """LLMVerdict with `intent` limited to the version's options (in the JSON schema too)."""
+    intents = classifier_spec(version).intents
+    return create_model(
+        f"LLMVerdict{version.upper()}",
+        __base__=LLMVerdict,
+        intent=(Literal[intents], ...),  # type: ignore[valid-type]
+    )
 
 
 def _spread(chosen: str, confidence: float, options: tuple[str, ...]) -> dict[str, float]:
@@ -322,8 +406,11 @@ def _escape(value: str) -> str:
 class LLMDecisionClient:
     """Asks the chat LLM the same questions, with structured output."""
 
-    def __init__(self, llm: UsageReportingLLMClient | None = None) -> None:
+    def __init__(
+        self, llm: UsageReportingLLMClient | None = None, *, version: str | None = None
+    ) -> None:
         self._llm = llm
+        self.spec = classifier_spec(_version(version))
 
     def _client(self) -> UsageReportingLLMClient:
         if self._llm is not None:
@@ -336,7 +423,7 @@ class LLMDecisionClient:
     async def classify(
         self, text: str, context: list[ContextMessage], *, workspace_id: uuid.UUID
     ) -> Classification:
-        prompt = load_prompt(PROMPT_NAME, PROMPT_VERSION)
+        prompt = load_prompt(PROMPT_NAME, self.spec.version)
         inner = self._client()
         metered = MeteredLLMClient(
             inner,
@@ -359,20 +446,24 @@ class LLMDecisionClient:
             },
         ]
         try:
-            verdict = await metered.complete_structured(messages, LLMVerdict)
+            verdict = await metered.complete_structured(
+                messages, verdict_model(self.spec.version)
+            )
         except LLMError as exc:
             raise DecisionError("LLM classification failed") from exc
-        return Classification(
+        intents, priorities = self.spec.intents, self.spec.priorities
+        result = Classification(
             intent=verdict.intent,
-            intent_probs=_spread(verdict.intent, verdict.intent_confidence, INTENTS),
+            intent_probs=_spread(verdict.intent, verdict.intent_confidence, intents),
             priority=verdict.priority,
-            priority_probs=_spread(verdict.priority, verdict.priority_confidence, PRIORITIES),
+            priority_probs=_spread(verdict.priority, verdict.priority_confidence, priorities),
             needs_human_prob=round(verdict.needs_human_probability, 4),
             confidence=round(verdict.intent_confidence, 4),
             provider=inner.provider,
             model=inner.model or "unset",
             tokens=metered.last_input_tokens + metered.last_output_tokens,
         )
+        return apply_policy(result)
 
 
 class FallbackDecisionClient:

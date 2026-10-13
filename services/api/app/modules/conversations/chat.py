@@ -1,7 +1,8 @@
 """Widget replies: classify, route, then answer from the knowledge base, run the agent, or
 hand off.
 
-Routing (decide_route): greetings and thanks get a fixed friendly reply; order questions
+Routing (decide_route): greetings and thanks get a fixed friendly reply, off-topic messages a
+short redirect (no ticket); account security problems always hand off; order questions
 (and follow-ups to an agent reply, e.g. the customer giving their email) go to the agent
 with read-only tools; requests that need a person (refunds, complaints, account changes, or
 a high needs-human probability) become a ticket; everything else, including low-confidence
@@ -85,9 +86,24 @@ SMALL_TALK_REPLIES: dict[str, tuple[str, ...]] = {
         "Happy to help! Let me know if there's anything else.",
         "Glad I could help. Have a great day!",
     ),
+    # Unrelated to the store: a short redirect, never an answer and never a ticket.
+    "off_topic": (
+        (
+            "I can only help with questions about our store, your orders and our policies. "
+            "Is there anything I can help you with there?"
+        ),
+        (
+            "Sorry, that's outside what I can help with here. I'm happy to help with orders, "
+            "shipping, returns or anything else about our store."
+        ),
+    ),
 }
 SMALL_TALK_INTENTS = frozenset(SMALL_TALK_REPLIES)
-HANDOFF_INTENTS = frozenset({"refund_request", "cancel_order", "complaint", "account_change"})
+HANDOFF_INTENTS = frozenset(
+    {"refund_request", "cancel_order", "complaint", "account_change", "account_security"}
+)
+# Hand off whatever the confidence: a person must look at these right away.
+ALWAYS_HANDOFF_INTENTS = frozenset({"account_security"})
 AGENT_INTENTS = frozenset({"order_status"})
 PRESSING_PRIORITIES = frozenset({"high", "urgent"})
 # Low-content messages: a few words, no question, and an intent that asks for nothing.
@@ -229,6 +245,8 @@ def decide_route(c: Classification | None, previous_route: str | None = None) ->
     follow_up = previous_route == MessageRoute.AGENT
     if c is None:
         return Route.AGENT if follow_up else Route.KNOWLEDGE
+    if top_intent(c) in ALWAYS_HANDOFF_INTENTS or c.intent in ALWAYS_HANDOFF_INTENTS:
+        return Route.HANDOFF
     settings = get_settings()
     confident = c.confidence >= settings.classify_min_confidence
     needs_human = c.needs_human_prob >= settings.needs_human_threshold

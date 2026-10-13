@@ -19,6 +19,8 @@ TicketIntentLiteral = Literal[
     "cancel_order",
     "complaint",
     "account_change",
+    "account_security",
+    "off_topic",
     "other",
 ]
 AssigneeFilter = Literal["me", "unassigned", "any"]

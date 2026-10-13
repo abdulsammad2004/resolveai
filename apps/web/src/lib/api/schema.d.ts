@@ -1665,7 +1665,7 @@ export interface components {
              * Intent
              * @enum {string}
              */
-            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "other";
+            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "account_security" | "off_topic" | "other";
             /**
              * Priority
              * @enum {string}
@@ -1752,7 +1752,7 @@ export interface components {
              * Intent
              * @enum {string}
              */
-            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "other";
+            intent: "greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "account_security" | "off_topic" | "other";
             /**
              * Priority
              * @enum {string}
@@ -2888,7 +2888,7 @@ export interface operations {
             query?: {
                 status?: ("new" | "triaged" | "awaiting_review" | "replied" | "resolved") | null;
                 priority?: ("low" | "normal" | "high" | "urgent") | null;
-                intent?: ("greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "other") | null;
+                intent?: ("greeting" | "thanks" | "knowledge_question" | "order_status" | "refund_request" | "cancel_order" | "complaint" | "account_change" | "account_security" | "off_topic" | "other") | null;
                 assignee?: "me" | "unassigned" | "any";
                 cursor?: string | null;
                 limit?: number;

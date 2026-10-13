@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     cloudflare_account_id: str = ""
     cloudflare_api_token: SecretStr | None = None
     clef_flash_price_per_mtok: Decimal = Decimal("0.09")
+    # Classifier version: prompts classify_<v> (LLM) and classify_criteria_<v> (Clef).
+    classify_version: Literal["v2", "v3"] = "v3"
     # Below this intent confidence a message is answered from the knowledge base.
     classify_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     # At or above this needs-human probability a message becomes a ticket.
@@ -101,6 +103,11 @@ class Settings(BaseSettings):
     rate_limit_regenerate_per_minute: int = Field(default=10, ge=1)
     # Every authenticated dashboard request, per user.
     rate_limit_api_user_per_minute: int = Field(default=300, ge=1)
+
+    # Evals (scripts/run_evals.py). A run stops before the next case once its llm_calls cost
+    # reaches the cap. The judge defaults to LLM_CHAT_MODEL and is costed at the LLM_* prices.
+    eval_max_cost_usd: Decimal = Field(default=Decimal("1.00"), ge=0)
+    eval_judge_model: str = ""
 
     # Observability. LOG_FORMAT=json for structured logs, text for local reading.
     log_level: str = "INFO"

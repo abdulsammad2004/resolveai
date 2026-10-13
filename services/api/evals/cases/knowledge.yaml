@@ -1,0 +1,101 @@
+# Knowledge cases: answerable from one fixture doc (`source` is the file stem in fixtures/kb).
+# `facts` are the key facts the answer must state; the judge checks coverage and grounding.
+- id: kn-001
+  category: knowledge
+  question: "How many days do I have to return something?"
+  expect: {source: returns, facts: ["30 days", "from the delivery date"]}
+
+- id: kn-002
+  category: knowledge
+  question: "Can I return socks if I opened the pack?"
+  expect: {source: returns, facts: ["opened merino socks cannot be returned"]}
+
+- id: kn-003
+  category: knowledge
+  question: "Do I have to pay for return shipping? I live in Ohio."
+  expect: {source: returns, facts: ["return shipping is free within the United States"]}
+
+- id: kn-004
+  category: knowledge
+  question: "How long after you get my return will I see the refund?"
+  expect: {source: returns, facts: ["inspected within 3 business days", "bank may take 5 to 10 business days"]}
+
+- id: kn-005
+  category: knowledge
+  question: "Can I just swap my beanie for a different colour?"
+  expect: {source: returns, facts: ["no direct exchanges", "return for a refund and place a new order"]}
+
+- id: kn-006
+  category: knowledge
+  question: "My mug arrived broken, what do I do?"
+  expect: {source: returns, facts: ["tell us within 7 days of delivery", "include a photo", "replacement or full refund"]}
+
+- id: kn-007
+  category: knowledge
+  question: "When is shipping free?"
+  expect: {source: shipping, facts: ["free standard shipping on orders over $75"]}
+
+- id: kn-008
+  category: knowledge
+  question: "How much is overnight shipping?"
+  expect: {source: shipping, facts: ["$29.95", "1 business day"]}
+
+- id: kn-009
+  category: knowledge
+  question: "If I order at 4pm today, when does it ship?"
+  expect: {source: shipping, facts: ["orders after 2 pm Eastern ship the next business day"]}
+
+- id: kn-010
+  category: knowledge
+  question: "Do you ship to the UK and how long does it take?"
+  expect: {source: shipping, facts: ["ships to the United Kingdom", "5 to 10 business days"]}
+
+- id: kn-011
+  category: knowledge
+  question: "Will I have to pay customs fees on an order to Germany?"
+  expect: {source: shipping, facts: ["import duties and taxes are paid by the customer on delivery"]}
+
+- id: kn-012
+  category: knowledge
+  question: "My order already shipped, can you change the address?"
+  expect: {source: shipping, facts: ["address can't be changed after shipping", "ask the carrier to redirect"]}
+
+- id: kn-013
+  category: knowledge
+  question: "How long is the warranty on your rain jacket?"
+  expect: {source: warranty, facts: ["2-year warranty"]}
+
+- id: kn-014
+  category: knowledge
+  question: "My steel bottle doesn't keep coffee hot anymore after 3 years, is that covered?"
+  expect: {source: warranty, facts: ["lifetime warranty on the vacuum seal"]}
+
+- id: kn-015
+  category: knowledge
+  question: "What do I need to send for a warranty claim?"
+  expect: {source: warranty, facts: ["order number", "description of the problem", "a photo of the defect"]}
+
+- id: kn-016
+  category: knowledge
+  question: "How should I wash my wool blanket?"
+  expect: {source: warranty, facts: ["hand wash cold", "dry flat", "never tumble dry"]}
+
+- id: kn-017
+  category: knowledge
+  question: "Can I pay with crypto?"
+  expect: {source: payments, facts: ["cryptocurrency is not accepted"]}
+
+- id: kn-018
+  category: knowledge
+  question: "When will my card actually be charged?"
+  expect: {source: payments, facts: ["charged when the order ships"]}
+
+- id: kn-019
+  category: knowledge
+  question: "Do your gift cards expire?"
+  expect: {source: payments, facts: ["gift cards never expire"]}
+
+- id: kn-020
+  category: knowledge
+  question: "The jacket I bought last week is now cheaper. Can I get the difference back?"
+  expect: {source: payments, facts: ["within 14 days of the order", "refund the difference"]}
