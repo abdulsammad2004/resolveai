@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import subprocess
 import sys
@@ -29,6 +30,8 @@ get_settings.cache_clear()
 
 from app.ai.embeddings import FakeEmbeddingClient
 from app.core.database import engine as app_engine
+from app.core.middleware import get_request_id
+from app.core.ratelimit import RateDecision, get_rate_limiter
 from app.core.storage import LocalStorage, get_storage
 from app.main import create_app
 from app.modules.conversations.limits import get_widget_limiter
@@ -102,19 +105,24 @@ class RecordingQueue:
         self.drafts: list[tuple[uuid.UUID, uuid.UUID, bool]] = []
         # execute_action jobs: (action_id, workspace_id, idempotency_key)
         self.executions: list[tuple[uuid.UUID, uuid.UUID, str]] = []
+        # (job name, request id) of every enqueued job, in order.
+        self.request_ids: list[tuple[str, str]] = []
 
     async def enqueue_ingest(self, document_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
         self.jobs.append((document_id, workspace_id))
+        self.request_ids.append(("ingest_document", get_request_id()))
 
     async def enqueue_process_ticket(
         self, ticket_id: uuid.UUID, workspace_id: uuid.UUID, *, force: bool = False
     ) -> None:
         self.drafts.append((ticket_id, workspace_id, force))
+        self.request_ids.append(("process_ticket", get_request_id()))
 
     async def enqueue_execute_action(
         self, action_id: uuid.UUID, workspace_id: uuid.UUID, idempotency_key: str
     ) -> None:
         self.executions.append((action_id, workspace_id, idempotency_key))
+        self.request_ids.append(("execute_action", get_request_id()))
 
 
 class InMemoryLock:
@@ -135,15 +143,23 @@ class InMemoryLock:
 
 
 class InMemoryLimiter:
-    """Stands in for Redis: rate-limit counters and the daily token budget in a dict."""
+    """Stands in for Redis: sliding-window rate limits (on a fake clock) and the daily token
+    budget, in dicts. `hits` counts every check per key, allowed or not."""
 
     def __init__(self) -> None:
+        self.now = 1_000_000.0
+        self.windows: dict[str, list[float]] = {}
         self.hits: dict[str, int] = {}
         self.tokens: dict[uuid.UUID, int] = {}
 
-    async def allow(self, key: str, limit: int, window_s: int) -> bool:
+    async def hit(self, key: str, limit: int, window_s: int) -> RateDecision:
         self.hits[key] = self.hits.get(key, 0) + 1
-        return self.hits[key] <= limit
+        live = [t for t in self.windows.get(key, []) if t > self.now - window_s]
+        self.windows[key] = live
+        if len(live) < limit:
+            live.append(self.now)
+            return RateDecision(True)
+        return RateDecision(False, max(1, math.ceil(live[0] + window_s - self.now)))
 
     async def tokens_used_today(self, workspace_id: uuid.UUID) -> int:
         return self.tokens.get(workspace_id, 0)
@@ -184,6 +200,7 @@ def app(storage: LocalStorage, job_queue: RecordingQueue, limiter: InMemoryLimit
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_job_queue] = lambda: job_queue
     app.dependency_overrides[get_widget_limiter] = lambda: limiter
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
     return app
 
 

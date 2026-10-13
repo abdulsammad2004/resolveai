@@ -38,6 +38,7 @@ class ActionRequest(IdMixin, TimestampMixin, Base):
         ),
         Index("ix_action_requests_workspace_id_status", "workspace_id", "status", "created_at"),
         Index("ix_action_requests_workspace_id_ticket_id", "workspace_id", "ticket_id"),
+        Index("ix_action_requests_workspace_id_created_at", "workspace_id", "created_at"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(

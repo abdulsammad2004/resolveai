@@ -123,6 +123,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/widget/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Session
+         * @description Start or resume a widget conversation. Public: authenticated by key and origin.
+         */
+        post: operations["create_session_api_v1_widget_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Message */
+        post: operations["send_message_api_v1_widget_messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Conversation
+         * @description The conversation's messages. With `after` (the id of the newest message the widget
+         *     has), only newer ones: the widget polls this way for team replies. Polling calls no
+         *     model and doesn't count toward the message rate limits or the token budget. An unknown
+         *     `after` id returns the whole conversation.
+         */
+        get: operations["get_conversation_api_v1_widget_conversation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/conversation/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Conversation
+         * @description "Still need help?" on a resolved conversation: reopens the same ticket and
+         *     conversation (still with the team). 409 unless the conversation was resolved.
+         */
+        post: operations["reopen_conversation_api_v1_widget_conversation_reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/conversation/resolution-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate Resolution
+         * @description "Was this helpful?" after a resolve, stored on the ticket. 409 unless resolved.
+         */
+        post: operations["rate_resolution_api_v1_widget_conversation_resolution_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widget/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rate Message */
+        post: operations["rate_message_api_v1_widget_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -187,6 +305,48 @@ export interface paths {
         get: operations["list_members_api_v1_members_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Demo Tools
+         * @description Whether dev/demo tools (the reset button) are available on this server.
+         */
+        get: operations["demo_tools_api_v1_workspace_demo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/demo/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Demo Data
+         * @description Dev/demo only (DEMO_TOOLS_ENABLED), owners only: delete the caller's workspace's
+         *     conversations, inbox, drafts, actions and audit events, and reset its sample orders.
+         *     The workspace always comes from the access token.
+         */
+        post: operations["reset_demo_data_api_v1_workspace_demo_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -367,6 +527,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tickets/{ticket_id}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write Reply
+         * @description Start a reply from scratch (no AI text). It replaces any draft still under review.
+         */
+        post: operations["write_reply_api_v1_tickets__ticket_id__drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Draft */
+        patch: operations["edit_draft_api_v1_tickets__ticket_id__drafts__draft_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/drafts/{draft_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Draft
+         * @description Post the draft in the customer's chat as a team reply; the ticket becomes replied.
+         *     A draft is sent once: sending it again returns 409.
+         */
+        post: operations["send_draft_api_v1_tickets__ticket_id__drafts__draft_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tickets/{ticket_id}/drafts/{draft_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Draft */
+        post: operations["reject_draft_api_v1_tickets__ticket_id__drafts__draft_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/actions": {
         parameters: {
             query?: never;
@@ -376,9 +611,89 @@ export interface paths {
         };
         /**
          * List Actions
-         * @description Newest first, across all tickets, with each ticket's subject.
+         * @description Newest first, across all tickets, with each ticket's subject, customer and order.
          */
         get: operations["list_actions_api_v1_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Action
+         * @description Approve and queue execution; poll the action (or its ticket) for the result.
+         *
+         *     Approving twice is safe: the action moves to approved once and runs at most once.
+         */
+        post: operations["approve_action_api_v1_actions__action_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Action
+         * @description Reject with a reason. Nothing is carried out.
+         */
+        post: operations["reject_action_api_v1_actions__action_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Analytics Overview */
+        get: operations["analytics_overview_api_v1_analytics_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/knowledge-gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Knowledge Gaps
+         * @description Top questions the assistant couldn't answer from the help docs, grouped by similarity.
+         *     Budget fallbacks are excluded. Example questions are masked; no contact details.
+         */
+        get: operations["knowledge_gaps_api_v1_analytics_knowledge_gaps_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -418,77 +733,6 @@ export interface paths {
         get: operations["list_orders_api_v1_mock_orders_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/widget/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Session
-         * @description Start or resume a widget conversation. Public: authenticated by key and origin.
-         */
-        post: operations["create_session_api_v1_widget_session_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/widget/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Send Message */
-        post: operations["send_message_api_v1_widget_messages_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/widget/conversation": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Conversation */
-        get: operations["get_conversation_api_v1_widget_conversation_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/widget/feedback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Rate Message */
-        post: operations["rate_message_api_v1_widget_feedback_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -536,6 +780,20 @@ export interface components {
              * @enum {string}
              */
             status: "proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed";
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decided By Name */
+            decided_by_name?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decision Reason */
+            decision_reason?: string | null;
+            /** Executed At */
+            executed_at?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -548,6 +806,18 @@ export interface components {
             updated_at: string;
             /** Ticket Subject */
             ticket_subject: string;
+            contact?: components["schemas"]["ContactOut"] | null;
+            /** Order Number */
+            order_number?: string | null;
+            /** Amount */
+            amount?: string | null;
+            /** Order Total */
+            order_total?: string | null;
+        };
+        /** ActionReject */
+        ActionReject: {
+            /** Reason */
+            reason: string;
         };
         /** ActionRequestOut */
         ActionRequestOut: {
@@ -581,6 +851,20 @@ export interface components {
              * @enum {string}
              */
             status: "proposed" | "approved" | "rejected" | "executing" | "succeeded" | "failed";
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decided By Name */
+            decided_by_name?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decision Reason */
+            decision_reason?: string | null;
+            /** Executed At */
+            executed_at?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -591,6 +875,76 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** ActionTypeStats */
+        ActionTypeStats: {
+            /** Tool Name */
+            tool_name: string;
+            /** Proposed */
+            proposed: number;
+            /** Approved */
+            approved: number;
+            /** Rejected */
+            rejected: number;
+            /** Succeeded */
+            succeeded: number;
+            /** Failed */
+            failed: number;
+        };
+        /** AnalyticsOverview */
+        AnalyticsOverview: {
+            /** Days */
+            days: number;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Series */
+            series: components["schemas"]["DayPoint"][];
+            conversations: components["schemas"]["ConversationStats"];
+            tickets: components["schemas"]["TicketStats"];
+            drafts: components["schemas"]["DraftStats"];
+            /** Actions */
+            actions: components["schemas"]["ActionTypeStats"][];
+            satisfaction: components["schemas"]["SatisfactionStats"];
+            llm: components["schemas"]["LLMStats"];
+        };
+        /** AuditEventOut */
+        AuditEventOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Actor Type
+             * @enum {string}
+             */
+            actor_type: "user" | "ai" | "system" | "customer";
+            /** Actor Id */
+            actor_id: string | null;
+            /** Actor Name */
+            actor_name: string | null;
+            /** Action */
+            action: string;
+            /** Target Type */
+            target_type: string;
+            /** Target Id */
+            target_id: string | null;
+            /** Before */
+            before: {
+                [key: string]: unknown;
+            } | null;
+            /** After */
+            after: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** AuthResponse */
         AuthResponse: {
@@ -717,6 +1071,23 @@ export interface components {
             next_cursor: string | null;
             counts: components["schemas"]["ConversationCounts"];
         };
+        /** ConversationStats */
+        ConversationStats: {
+            /** Total */
+            total: number;
+            /** Contained */
+            contained: number;
+            /** Contained Rate */
+            contained_rate: number | null;
+            /** Handed Off */
+            handed_off: number;
+            /** Handoff Rate */
+            handoff_rate: number | null;
+            /** Fallback Ended */
+            fallback_ended: number;
+            /** Thumbs Down Ended */
+            thumbs_down_ended: number;
+        };
         /** ConversationSummary */
         ConversationSummary: {
             /**
@@ -751,6 +1122,63 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "needs_human" | "closed";
+        };
+        /** CostDay */
+        CostDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Classify */
+            classify: number;
+            /** Answer */
+            answer: number;
+            /** Agent */
+            agent: number;
+            /** Draft */
+            draft: number;
+            /** Embedding */
+            embedding: number;
+        };
+        /** CountItem */
+        CountItem: {
+            /** Key */
+            key: string;
+            /** Count */
+            count: number;
+        };
+        /** DayPoint */
+        DayPoint: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Conversations */
+            conversations: number;
+            /** Contained */
+            contained: number;
+            /** Handed Off */
+            handed_off: number;
+            /** Tickets */
+            tickets: number;
+            /** Cost Usd */
+            cost_usd: number;
+        };
+        /** DemoResetOut */
+        DemoResetOut: {
+            /** Deleted */
+            deleted: {
+                [key: string]: number;
+            };
+            /** Mock Orders Reset */
+            mock_orders_reset: number;
+        };
+        /** DemoToolsOut */
+        DemoToolsOut: {
+            /** Enabled */
+            enabled: boolean;
         };
         /**
          * DocumentOut
@@ -802,6 +1230,61 @@ export interface components {
          * @enum {string}
          */
         DocumentStatus: "uploaded" | "processing" | "ready" | "failed";
+        /**
+         * DraftCreate
+         * @description Start a reply from scratch. It can stay empty until it is edited or sent.
+         */
+        DraftCreate: {
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+        };
+        /** DraftEdit */
+        DraftEdit: {
+            /** Content */
+            content: string;
+        };
+        /** DraftReject */
+        DraftReject: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * DraftSend
+         * @description Send the draft. With `content`, that text is saved (as an edit) and sent.
+         */
+        DraftSend: {
+            /** Content */
+            content?: string | null;
+        };
+        /**
+         * DraftStats
+         * @description AI drafts created in the range. Sent text is compared with what the AI wrote, with
+         *     whitespace normalised.
+         */
+        DraftStats: {
+            /** Sent As Is */
+            sent_as_is: number;
+            /** Sent Edited */
+            sent_edited: number;
+            /** Rejected */
+            rejected: number;
+            /** Edit Rate */
+            edit_rate: number | null;
+            /** Acceptance Rate */
+            acceptance_rate: number | null;
+        };
+        /** DurationStats */
+        DurationStats: {
+            /** Count */
+            count: number;
+            /** Median S */
+            median_s: number | null;
+            /** P90 S */
+            p90_s: number | null;
+        };
         /** FeedbackOut */
         FeedbackOut: {
             /**
@@ -826,6 +1309,44 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** KnowledgeGap */
+        KnowledgeGap: {
+            /** Question */
+            question: string;
+            /** Count */
+            count: number;
+            /**
+             * Last Seen
+             * Format: date-time
+             */
+            last_seen: string;
+        };
+        /** KnowledgeGapsOut */
+        KnowledgeGapsOut: {
+            /** Days */
+            days: number;
+            /** Total Fallbacks */
+            total_fallbacks: number;
+            /** Gaps */
+            gaps: components["schemas"]["KnowledgeGap"][];
+        };
+        /** LLMStats */
+        LLMStats: {
+            /** Calls */
+            calls: number;
+            /** Errors */
+            errors: number;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /** Cost Per Conversation */
+            cost_per_conversation: number | null;
+            /** By Purpose */
+            by_purpose: components["schemas"]["PurposeCost"][];
+            /** By Model */
+            by_model: components["schemas"]["ModelCost"][];
+            /** Daily */
+            daily: components["schemas"]["CostDay"][];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -905,6 +1426,10 @@ export interface components {
              */
             created_at: string;
             feedback?: components["schemas"]["FeedbackOut"] | null;
+            /** Authored By */
+            authored_by?: ("ai_draft" | "ai_draft_edited" | "human") | null;
+            /** Author Name */
+            author_name?: string | null;
         };
         /** MockOrderOut */
         MockOrderOut: {
@@ -933,6 +1458,23 @@ export interface components {
             /** Items */
             items: components["schemas"]["OrderItem"][];
         };
+        /** ModelCost */
+        ModelCost: {
+            /** Model */
+            model: string;
+            /** Calls */
+            calls: number;
+            /** Errors */
+            errors: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Avg Latency Ms */
+            avg_latency_ms: number | null;
+        };
         /** OrderItem */
         OrderItem: {
             /** Sku */
@@ -943,6 +1485,15 @@ export interface components {
             quantity: number;
             /** Unit Price */
             unit_price: string;
+        };
+        /** PurposeCost */
+        PurposeCost: {
+            /** Purpose */
+            purpose: string;
+            /** Calls */
+            calls: number;
+            /** Cost Usd */
+            cost_usd: number;
         };
         /** RegenerateDraftOut */
         RegenerateDraftOut: {
@@ -963,6 +1514,13 @@ export interface components {
             id: string;
             /** Content */
             content: string;
+            /** Original Content */
+            original_content: string;
+            /**
+             * Author Type
+             * @enum {string}
+             */
+            author_type: "ai" | "human";
             /** Citations */
             citations: components["schemas"]["Citation"][];
             /**
@@ -974,17 +1532,44 @@ export interface components {
             prompt_version: string | null;
             /** Error */
             error: string | null;
+            /** Reviewed By */
+            reviewed_by: string | null;
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Rejection Reason */
+            rejection_reason: string | null;
+            /** Sent At */
+            sent_at: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
         };
+        /** ResolutionFeedbackRequest */
+        ResolutionFeedbackRequest: {
+            /**
+             * Rating
+             * @enum {string}
+             */
+            rating: "up" | "down";
+        };
         /**
          * Role
          * @enum {string}
          */
         Role: "owner" | "admin" | "agent";
+        /** SatisfactionStats */
+        SatisfactionStats: {
+            /** Answer Up */
+            answer_up: number;
+            /** Answer Down */
+            answer_down: number;
+            /** Resolution Up */
+            resolution_up: number;
+            /** Resolution Down */
+            resolution_down: number;
+        };
         /** SearchRequest */
         SearchRequest: {
             /** Query */
@@ -1116,6 +1701,8 @@ export interface components {
             description: string | null;
             classification: components["schemas"]["ClassificationOut"] | null;
             conversation: components["schemas"]["ConversationDetail"] | null;
+            /** Resolution Rating */
+            resolution_rating?: ("up" | "down") | null;
             draft?: components["schemas"]["ReplyDraftOut"] | null;
             /**
              * Actions
@@ -1127,6 +1714,11 @@ export interface components {
              * @default []
              */
             tool_calls: components["schemas"]["ToolCallOut"][];
+            /**
+             * Activity
+             * @default []
+             */
+            activity: components["schemas"]["AuditEventOut"][];
         };
         /** TicketPage */
         TicketPage: {
@@ -1135,6 +1727,17 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
             counts: components["schemas"]["TicketCounts"];
+        };
+        /** TicketStats */
+        TicketStats: {
+            /** Total */
+            total: number;
+            /** By Intent */
+            by_intent: components["schemas"]["CountItem"][];
+            /** By Priority */
+            by_priority: components["schemas"]["CountItem"][];
+            first_response: components["schemas"]["DurationStats"];
+            resolution: components["schemas"]["DurationStats"];
         };
         /** TicketSummary */
         TicketSummary: {
@@ -1255,6 +1858,15 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "needs_human" | "closed";
+            /** Closed At */
+            closed_at?: string | null;
+            /**
+             * Resolved
+             * @default false
+             */
+            resolved: boolean;
+            /** Resolution Rating */
+            resolution_rating?: ("up" | "down") | null;
             /** Messages */
             messages: components["schemas"]["WidgetMessageOut"][];
         };
@@ -1596,6 +2208,196 @@ export interface operations {
             };
         };
     };
+    create_session_api_v1_widget_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WidgetSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_api_v1_widget_messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WidgetMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-Sent Events: `token` chunks, then `final` or `error`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_conversation_api_v1_widget_conversation_get: {
+        parameters: {
+            query?: {
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetConversationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_conversation_api_v1_widget_conversation_reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetConversationOut"];
+                };
+            };
+        };
+    };
+    rate_resolution_api_v1_widget_conversation_resolution_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolutionFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetConversationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_message_api_v1_widget_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WidgetFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspaces_api_v1_workspaces_get: {
         parameters: {
             query?: never;
@@ -1749,6 +2551,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberOut"][];
+                };
+            };
+        };
+    };
+    demo_tools_api_v1_workspace_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoToolsOut"];
+                };
+            };
+        };
+    };
+    reset_demo_data_api_v1_workspace_demo_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoResetOut"];
                 };
             };
         };
@@ -2207,6 +3049,149 @@ export interface operations {
             };
         };
     };
+    write_reply_api_v1_tickets__ticket_id__drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_draft_api_v1_tickets__ticket_id__drafts__draft_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_draft_api_v1_tickets__ticket_id__drafts__draft_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftSend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_draft_api_v1_tickets__ticket_id__drafts__draft_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_actions_api_v1_actions_get: {
         parameters: {
             query?: {
@@ -2226,6 +3211,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_action_api_v1_actions__action_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_action_api_v1_actions__action_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analytics_overview_api_v1_analytics_overview_get: {
+        parameters: {
+            query?: {
+                /** @description Range: today and the days before it (UTC). */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    knowledge_gaps_api_v1_analytics_knowledge_gaps_get: {
+        parameters: {
+            query?: {
+                /** @description Range: today and the days before it (UTC). */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeGapsOut"];
                 };
             };
             /** @description Validation Error */
@@ -2275,132 +3390,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MockOrderOut"][];
-                };
-            };
-        };
-    };
-    create_session_api_v1_widget_session_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WidgetSessionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WidgetSessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_message_api_v1_widget_messages_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WidgetMessageRequest"];
-            };
-        };
-        responses: {
-            /** @description Server-Sent Events: `token` chunks, then `final` or `error`. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Rate limited */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_conversation_api_v1_widget_conversation_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WidgetConversationOut"];
-                };
-            };
-        };
-    };
-    rate_message_api_v1_widget_feedback_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WidgetFeedbackRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeedbackOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

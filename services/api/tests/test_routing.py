@@ -13,7 +13,16 @@ from app.ai.decisions import (
 )
 from app.ai.decisions import fake_classification as clf
 from app.core.config import get_settings
-from app.modules.conversations.chat import FALLBACK_MESSAGE, HANDOFF_MESSAGE, SMALL_TALK_REPLIES
+from app.modules.conversations.chat import (
+    CLARIFY_MESSAGE,
+    FALLBACK_MESSAGE,
+    FALLBACK_OFFER,
+    HANDOFF_MESSAGE,
+    SMALL_TALK_REPLIES,
+    OfferReply,
+    is_low_content,
+    offer_reply,
+)
 from tests.conftest import SHOP_ORIGIN, WidgetSession, open_widget, signup, widget_key
 from tests.test_widget import ask, ready_chunk, rows, use_llm
 
@@ -100,6 +109,7 @@ async def test_greeting_with_a_serious_request_opens_a_ticket(
     assert llm.calls == 0
     [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
     assert ticket["subject"] == HACKED
+    assert ticket["intent"] == "other"  # never "greeting"; nothing else in the conversation
     assert ticket["priority"] == classification.priority
     assert ticket["status"] == "new"
     assert ticket["source"] == "widget"
@@ -183,8 +193,8 @@ async def test_low_confidence_is_treated_as_knowledge_question(
     assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
 
 
-async def test_rag_fallback_creates_a_ticket(
-    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+async def test_unknown_question_offers_a_teammate_without_a_ticket(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine, job_queue
 ) -> None:
     owner, session = await session_for(client)
     use_llm(app, "unused")
@@ -192,13 +202,13 @@ async def test_rag_fallback_creates_a_ticket(
 
     final = (await ask(client, session, "Do you ship to the moon?"))[-1][1]
 
-    assert final["content"] == FALLBACK_MESSAGE
+    assert final["content"] == FALLBACK_OFFER
     assert final["route"] == "fallback"
-    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
-    assert (ticket["intent"], ticket["priority"]) == ("knowledge_question", "low")
-    assert ticket["subject"] == "Do you ship to the moon?"
+    assert final["grounded"] is False
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
+    assert job_queue.drafts == []
     conversation = await conversation_row(app_role_engine, owner, session)
-    assert (conversation["status"], conversation["ticket_id"]) == ("needs_human", ticket["id"])
+    assert (conversation["status"], conversation["ticket_id"]) == ("open", None)
 
 
 async def test_open_ticket_is_reused_and_priority_only_rises(
@@ -252,11 +262,10 @@ async def test_classifier_outage_falls_back_to_knowledge_answer(
     app.dependency_overrides[get_decision_client] = lambda: Broken()
     final = (await ask(client, session, "Do you ship to the moon?"))[-1][1]
 
-    # No sources either, so the usual fallback: ticket without a classification.
+    # No sources either, so the usual fallback: an offer, no ticket.
     assert final["route"] == "fallback"
-    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
-    assert ticket["intent"] == "other"
-    assert ticket["classification"] is None
+    assert final["content"] == FALLBACK_OFFER
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
 
 
 async def test_budget_exhausted_opens_ticket_without_classifying(
@@ -269,5 +278,174 @@ async def test_budget_exhausted_opens_ticket_without_classifying(
     final = (await ask(client, session, "hello"))[-1][1]
 
     assert final["route"] == "fallback"
+    assert final["content"] == FALLBACK_MESSAGE  # no budget to follow up on an offer
     assert decider.calls == []
-    assert len(await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")) == 1
+    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
+    assert (ticket["intent"], ticket["classification"]) == ("other", None)
+
+
+# Low-content messages and the fallback offer ------------------------------------------------
+
+# The real classification of "Nothing" from the dashboard review: greeting, low confidence.
+NOTHING = clf("greeting", priority="low", confidence=0.46, needs_human=0.1)
+MOON = "Do you ship to the moon?"
+
+
+@pytest.mark.parametrize(
+    ("text", "classification", "expected"),
+    [
+        ("Nothing", NOTHING, True),
+        ("ok", clf("thanks", confidence=0.5), True),
+        ("test", clf("other", confidence=0.3), True),
+        ("shipping", clf("knowledge_question", confidence=0.4), False),
+        ("returns?", clf("other", confidence=0.3), False),
+        ("RA-10423", clf("other", confidence=0.3), False),
+        ("I need help with something", clf("other", confidence=0.3), False),
+        ("nothing", None, False),
+    ],
+)
+def test_low_content_is_conservative(text: str, classification, expected: bool) -> None:
+    assert is_low_content(text, classification) is expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("yes please", OfferReply.YES),
+        ("Yeah, that would help", OfferReply.YES),
+        ("ok", OfferReply.YES),
+        ("sure", OfferReply.YES),
+        ("no thanks", OfferReply.NO),
+        ("nope", OfferReply.NO),
+        ("yes, but do you ship to Mars?", OfferReply.OTHER),
+        ("what about the return policy", OfferReply.OTHER),
+        ("yesterday my parcel arrived broken and nobody answered my emails", OfferReply.OTHER),
+    ],
+)
+def test_offer_reply(text: str, expected: OfferReply) -> None:
+    assert offer_reply(text) is expected
+
+
+async def test_nothing_gets_a_clarifying_reply_without_search_or_ticket(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    llm = use_llm(app, "should not be used [S1]")
+    use_decider(app, {"nothing": NOTHING})
+
+    events = await ask(client, session, "Nothing")
+
+    assert [name for name, _ in events] == ["final"]
+    final = events[0][1]
+    assert (final["content"], final["route"]) == (CLARIFY_MESSAGE, "small_talk")
+    assert llm.calls == 0
+    # No query embedding: the knowledge search never ran.
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM llm_calls") == []
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
+    assert (await conversation_row(app_role_engine, owner, session))["status"] == "open"
+
+
+async def test_yes_after_the_offer_hands_off_through_the_tool(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine, job_queue
+) -> None:
+    owner, session = await session_for(client)
+    llm = use_llm(app, "unused")
+    use_decider(
+        app,
+        {"yes please": clf("thanks", confidence=0.7)},
+        default=clf("knowledge_question", priority="low"),
+    )
+    assert (await ask(client, session, MOON))[-1][1]["content"] == FALLBACK_OFFER
+
+    events = await ask(client, session, "yes please")
+
+    assert ("status", {"text": "Passing this to the team…", "tool": "hand_off_to_team"}) in events
+    final = events[-1][1]
+    assert (final["content"], final["route"]) == (HANDOFF_MESSAGE, "handoff")
+    assert final["tools_used"] == ["hand_off_to_team"]
+    assert llm.calls == 0
+    [logged] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tool_calls")
+    assert (logged["tool_name"], logged["status"]) == ("hand_off_to_team", "ok")
+    assert logged["conversation_id"] == session.conversation_id
+    # The ticket is about the question, not the "yes" (whose intent was thanks).
+    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
+    assert ticket["subject"] == MOON
+    assert (ticket["intent"], ticket["priority"]) == ("knowledge_question", "low")
+    assert job_queue.drafts == [(ticket["id"], owner.workspace_id, False)]
+    conversation = await conversation_row(app_role_engine, owner, session)
+    assert (conversation["status"], conversation["ticket_id"]) == ("needs_human", ticket["id"])
+
+
+async def test_no_after_the_offer_gets_a_clarifying_reply(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    use_llm(app, "unused")
+    use_decider(app, {"no thanks": clf("thanks", confidence=0.9)})
+    await ask(client, session, MOON)
+
+    final = (await ask(client, session, "no thanks"))[-1][1]
+
+    assert (final["content"], final["route"]) == (CLARIFY_MESSAGE, "small_talk")
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
+
+
+async def test_refund_request_still_opens_a_ticket_immediately(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    use_llm(app, "unused")
+    use_decider(app, {"refund": clf("refund_request", priority="high")})
+    await ask(client, session, MOON)  # an offer first: a request is never read as a yes/no
+
+    final = (await ask(client, session, "Ok, then I want a refund for my order"))[-1][1]
+
+    assert (final["content"], final["route"]) == (HANDOFF_MESSAGE, "handoff")
+    assert final["tools_used"] == []
+    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
+    assert (ticket["intent"], ticket["priority"]) == ("refund_request", "high")
+
+
+async def test_offered_fallback_is_still_a_knowledge_gap(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    use_llm(app, "unused")
+    use_decider(app, {})
+    await ask(client, session, MOON)
+
+    [reply] = await rows(
+        app_role_engine, owner.workspace_id, "SELECT * FROM messages WHERE role = 'assistant'"
+    )
+    assert (reply["route"], reply["fallback_reason"]) == ("fallback", "no_sources")
+    gaps = (
+        await client.get(
+            "/api/v1/analytics/knowledge-gaps", params={"days": 7}, headers=owner.headers
+        )
+    ).json()
+    assert [(g["question"], g["count"]) for g in gaps["gaps"]] == [(MOON, 1)]
+    overview = (
+        await client.get("/api/v1/analytics/overview", params={"days": 7}, headers=owner.headers)
+    ).json()["conversations"]
+    assert (overview["fallback_ended"], overview["handed_off"]) == (1, 0)
+
+
+async def test_greeting_triggered_ticket_takes_the_conversations_real_intent(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    use_llm(app, "unused")
+    use_decider(
+        app,
+        {
+            # Below the confidence threshold: answered from knowledge (an offer), no ticket.
+            "broken": clf("complaint", confidence=0.5),
+            "hacked": clf("greeting", priority="urgent", needs_human=0.3, confidence=0.9),
+        },
+    )
+    await ask(client, session, "My parcel arrived broken")
+
+    await ask(client, session, HACKED)
+
+    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
+    assert (ticket["intent"], ticket["priority"]) == ("complaint", "urgent")

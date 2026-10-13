@@ -103,6 +103,7 @@ class ReplyDraft(IdMixin, TimestampMixin, Base):
         ),
         CheckConstraint("author_type IN ('ai', 'human')", name="author_type"),
         Index("ix_reply_drafts_workspace_id_ticket_id", "workspace_id", "ticket_id", "created_at"),
+        Index("ix_reply_drafts_workspace_id_created_at", "workspace_id", "created_at"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(

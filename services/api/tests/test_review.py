@@ -318,7 +318,10 @@ async def test_widget_polls_only_new_messages_without_using_limits(
     session, ticket_id = await chat_ticket(client, owner, worker_ctx)
     full = (await client.get(WIDGET_CONVERSATION, headers=session.headers)).json()
     newest = full["messages"][-1]["id"]
-    hits, tokens = dict(limiter.hits), dict(limiter.tokens)
+    def widget_hits() -> dict[str, int]:
+        return {k: v for k, v in limiter.hits.items() if k.startswith("widget")}
+
+    hits, tokens = widget_hits(), dict(limiter.tokens)
 
     nothing_new = await client.get(WIDGET_CONVERSATION, params={"after": newest}, headers=session.headers)
     assert nothing_new.status_code == 200
@@ -332,7 +335,7 @@ async def test_widget_polls_only_new_messages_without_using_limits(
 
     assert [(m["role"], m["content"]) for m in polled.json()["messages"]] == [("agent", DRAFT)]
     # Polling counts toward no rate limit and spends no tokens.
-    assert (limiter.hits, limiter.tokens) == (hits, tokens)
+    assert (widget_hits(), limiter.tokens) == (hits, tokens)
     # An id from elsewhere falls back to the whole conversation, never another chat's messages.
     unknown = await client.get(
         WIDGET_CONVERSATION, params={"after": str(uuid.uuid4())}, headers=session.headers

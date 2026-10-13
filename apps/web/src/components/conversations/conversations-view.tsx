@@ -310,6 +310,20 @@ function ConversationPanel({ id, onBack }: { id: string; onBack: () => void }) {
   );
 }
 
+type AuthoredBy = NonNullable<ConversationDetail["messages"][number]["authored_by"]>;
+
+const authoredLabel: Record<AuthoredBy, string> = {
+  ai_draft: "AI draft",
+  ai_draft_edited: "AI draft · edited",
+  human: "Written by agent",
+};
+
+const authoredTone: Record<AuthoredBy, ChipTone> = {
+  ai_draft: "ion",
+  ai_draft_edited: "review",
+  human: "neutral",
+};
+
 export function Transcript({ conversation }: { conversation: ConversationDetail }) {
   return (
     <ol className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5 sm:px-6" aria-label="Transcript">
@@ -336,9 +350,12 @@ export function Transcript({ conversation }: { conversation: ConversationDetail 
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-ash">
               <span>
-                {m.role === "assistant" ? "AI assistant" : "Team"} ·{" "}
+                {m.role === "assistant" ? "AI assistant" : (m.author_name ?? "Team")} ·{" "}
                 <time dateTime={m.created_at}>{shortTime(m.created_at)}</time>
               </span>
+              {m.authored_by && (
+                <StatusChip tone={authoredTone[m.authored_by]}>{authoredLabel[m.authored_by]}</StatusChip>
+              )}
               {m.grounded === true && <StatusChip tone="resolved">Grounded</StatusChip>}
               {m.grounded === false && <StatusChip tone="review">Fallback, no sources</StatusChip>}
               {m.route === "handoff" && <StatusChip tone="review">Passed to the team</StatusChip>}

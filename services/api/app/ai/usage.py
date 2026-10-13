@@ -30,6 +30,7 @@ from app.ai.llm import (
 from app.core.config import get_settings
 from app.core.database import Base, IdMixin, TimestampMixin
 from app.core.deps import tenant_session
+from app.core.metrics import LLM_CALLS, LLM_COST, LLM_LATENCY, LLM_TOKENS
 from app.core.middleware import get_request_id
 
 logger = logging.getLogger("app.ai.usage")
@@ -102,6 +103,22 @@ def _error_type(exc: BaseException) -> str:
     return type(exc.__cause__ or exc).__name__[:100]
 
 
+def _observe_llm_call(
+    purpose: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: Decimal,
+    latency_ms: float,
+    status: LLMCallStatus,
+) -> None:
+    LLM_CALLS.inc(model=model, purpose=purpose, status=status.value)
+    LLM_LATENCY.observe(latency_ms / 1000, model=model, purpose=purpose)
+    LLM_TOKENS.inc(input_tokens, model=model, purpose=purpose, direction="input")
+    LLM_TOKENS.inc(output_tokens, model=model, purpose=purpose, direction="output")
+    LLM_COST.inc(float(cost_usd), model=model, purpose=purpose)
+
+
 async def record_llm_call(
     *,
     workspace_id: uuid.UUID,
@@ -118,6 +135,7 @@ async def record_llm_call(
     request_id: str | None = None,
 ) -> uuid.UUID | None:
     """Write one llm_calls row and return its id, or None if the write failed."""
+    _observe_llm_call(purpose, model, input_tokens, output_tokens, cost_usd, latency_ms, status)
     call_id = uuid.uuid4()
     try:
         async with tenant_session(workspace_id) as db:

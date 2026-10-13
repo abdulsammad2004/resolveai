@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, UserRound } from "lucide-react";
+import { ArrowLeft, CircleCheck, ThumbsDown, ThumbsUp, UserRound } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { FormError } from "@/components/auth/form-error";
 import { contactName, Transcript } from "@/components/conversations/conversations-view";
+import { ActivityLog } from "@/components/tickets/activity-log";
 import {
   AiDraftPanel,
   isAwaitingDraft,
@@ -142,6 +143,16 @@ function TicketBody({
               {" · "}
               {t.source === "widget" ? "Website chat" : "Created by hand"} · {fullFormat.format(new Date(t.created_at))}
             </p>
+            {t.resolution_rating && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-bone/90">
+                {t.resolution_rating === "up" ? (
+                  <ThumbsUp className="size-3.5 text-resolved" aria-hidden />
+                ) : (
+                  <ThumbsDown className="size-3.5 text-urgent" aria-hidden />
+                )}
+                Customer rated the resolution {t.resolution_rating === "up" ? "helpful" : "not helpful"}
+              </p>
+            )}
           </div>
         </div>
 
@@ -167,6 +178,18 @@ function TicketBody({
               ))}
             </select>
           </div>
+          {t.status === "replied" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-9 gap-1.5"
+              disabled={update.isPending}
+              onClick={() => void change({ status: "resolved" }, "Marked resolved.")}
+            >
+              <CircleCheck className="size-3.5" aria-hidden />
+              Mark resolved
+            </Button>
+          )}
           <div className="flex flex-col gap-1">
             <label htmlFor={priorityId} className="text-xs text-ash">
               Priority
@@ -232,7 +255,7 @@ function TicketBody({
         )}
 
         <AiDraftPanel
-          draft={t.draft ?? null}
+          ticket={t}
           awaiting={awaitingDraft}
           regenerating={regenerate.isPending}
           onRegenerate={() => void regenerateDraft()}
@@ -241,6 +264,8 @@ function TicketBody({
         <ProposedActions actions={t.actions} />
 
         <ToolActivity calls={t.tool_calls} />
+
+        <ActivityLog events={t.activity} />
 
         <WhyRouted classification={t.classification ?? null} />
 

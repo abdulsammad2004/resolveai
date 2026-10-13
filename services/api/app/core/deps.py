@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
+from app.core.logs import bind_log_context
 from app.core.security import decode_access_token, decode_widget_token
 
 _bearer = HTTPBearer(auto_error=False)
@@ -32,11 +33,13 @@ async def get_principal(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = decode_access_token(credentials.credentials)
-    return Principal(
+    principal = Principal(
         user_id=uuid.UUID(payload["sub"]),
         workspace_id=uuid.UUID(payload["wid"]),
         role=payload["role"],
     )
+    bind_log_context(workspace_id=principal.workspace_id, user_id=principal.user_id)
+    return principal
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
@@ -61,11 +64,13 @@ async def get_widget_principal(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = decode_widget_token(credentials.credentials)
-    return WidgetPrincipal(
+    widget = WidgetPrincipal(
         workspace_id=uuid.UUID(payload["wid"]),
         conversation_id=uuid.UUID(payload["conversation_id"]),
         contact_id=uuid.UUID(payload["contact_id"]),
     )
+    bind_log_context(workspace_id=widget.workspace_id, conversation_id=widget.conversation_id)
+    return widget
 
 
 CurrentWidget = Annotated[WidgetPrincipal, Depends(get_widget_principal)]
