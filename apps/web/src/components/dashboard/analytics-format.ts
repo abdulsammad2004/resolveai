@@ -37,6 +37,11 @@ export function formatUsd(value: number | null | undefined): string {
   return "<$0.0001";
 }
 
+/** Cost axis ticks: one fixed width ($0.000) so the labels line up and fit. */
+export function formatUsdAxis(value: number): string {
+  return `$${value.toFixed(3)}`;
+}
+
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "–";
   if (seconds < 60) return `${Math.round(seconds)}s`;

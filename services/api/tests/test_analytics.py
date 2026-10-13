@@ -165,7 +165,7 @@ async def seed_workspace_a(conn: AsyncConnection, wid: uuid.UUID) -> None:
     await s.conversation([("hi", "small_talk", None)], at=base)
     # Not contained: no ticket, but the last reply was rated down.
     await s.conversation([("Where is my order?", "agent", None)], at=base, rating="down")
-    # Fallback-ended with a ticket: three questions the docs couldn't answer.
+    # Fell back, then handed off (a ticket): three questions the docs couldn't answer.
     c3 = await s.conversation(
         [
             ("Do you ship to Canada?", "fallback", "no_sources"),
@@ -175,7 +175,7 @@ async def seed_workspace_a(conn: AsyncConnection, wid: uuid.UUID) -> None:
         at=base,
     )
     c4 = await s.conversation([("I want a refund", "handoff", None)], at=base)
-    # Fallback because the token budget ran out: not a knowledge gap, no ticket.
+    # Fallback because the token budget ran out: not a knowledge gap, no ticket (seeded).
     await s.conversation([("What is the warranty?", "fallback", "budget")], at=base)
     # Outside a 7-day range, inside 30 days.
     await s.conversation([("Old question", "answer", None)], at=ago(days=10))
@@ -260,7 +260,7 @@ async def test_overview_numbers_on_seeded_data(client: AsyncClient, seeded) -> N
         "contained_rate": 0.3333,
         "handed_off": 2,
         "handoff_rate": 0.3333,
-        "fallback_ended": 2,
+        "fallback_ended": 1,  # the budget one; c3 has a ticket, so it counts as handed off
         "thumbs_down_ended": 1,
     }
 

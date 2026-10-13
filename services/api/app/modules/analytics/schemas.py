@@ -31,7 +31,9 @@ class ConversationStats(BaseModel):
     contained_rate: float | None
     handed_off: int
     handoff_rate: float | None
-    # The last assistant reply was the "couldn't find that in our help docs" fallback.
+    # No ticket, and the last assistant reply was the "couldn't find that in our help docs"
+    # fallback. contained, fallback_ended, thumbs_down_ended and handed_off never overlap; the
+    # rest of total had no assistant reply.
     fallback_ended: int
     # No ticket, but the last assistant reply was rated thumbs down.
     thumbs_down_ended: int

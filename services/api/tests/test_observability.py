@@ -100,16 +100,22 @@ async def test_request_id_reaches_jobs_enqueued_by_requests(
     assert resp.status_code == 201
     assert job_queue.request_ids[-1] == ("process_ticket", "create-ticket-1")
 
-    # A widget message that falls back opens a ticket and queues its draft in the same trace.
+    # A widget fallback offers a teammate; the "yes" opens a ticket and queues its draft in
+    # that message's trace.
     use_llm(app, "unused")
     session = await open_widget(client, await widget_key(client, owner, [SHOP_ORIGIN]))
-    resp = await client.post(
-        "/api/v1/widget/messages",
-        json={"content": "Something the docs don't cover"},
-        headers={**session.headers, "X-Request-ID": "widget-msg-1"},
-    )
-    assert resp.status_code == 200
-    assert job_queue.request_ids[-1] == ("process_ticket", "widget-msg-1")
+    for content, request_id in (
+        ("Something the docs don't cover", "widget-msg-1"),
+        ("yes please", "widget-msg-2"),
+    ):
+        resp = await client.post(
+            "/api/v1/widget/messages",
+            json={"content": content},
+            headers={**session.headers, "X-Request-ID": request_id},
+        )
+        assert resp.status_code == 200
+    assert job_queue.request_ids[-1] == ("process_ticket", "widget-msg-2")
+    assert ("process_ticket", "widget-msg-1") not in job_queue.request_ids
 
 
 class FakePool:

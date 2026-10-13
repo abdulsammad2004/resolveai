@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.ai.llm import FakeLLMClient
 from app.api.v1.widget import get_chat_llm
 from app.core.config import get_settings
-from app.modules.conversations.chat import FALLBACK_MESSAGE
+from app.modules.conversations.chat import FALLBACK_OFFER
 from tests.conftest import (
     SHOP_ORIGIN,
     WidgetSession,
@@ -55,14 +55,15 @@ async def test_list_detail_and_close(client: AsyncClient) -> None:
     body = resp.json()
     [item] = body["items"]
     assert item["id"] == str(session.conversation_id)
-    assert item["status"] == "needs_human"
-    assert item["last_message_preview"] == FALLBACK_MESSAGE
+    # The fallback only offers a teammate: no ticket, so not waiting on a person yet.
+    assert item["status"] == "open"
+    assert item["last_message_preview"] == FALLBACK_OFFER
     assert item["last_message_role"] == "assistant"
     assert item["contact"]["anonymous_id"] == session.anonymous_id
-    assert body["counts"] == {"open": 0, "needs_human": 1, "closed": 0}
+    assert body["counts"] == {"open": 1, "needs_human": 0, "closed": 0}
     assert body["next_cursor"] is None
 
-    resp = await client.get(f"{LIST_URL}?status=open", headers=owner.headers)
+    resp = await client.get(f"{LIST_URL}?status=needs_human", headers=owner.headers)
     assert resp.json()["items"] == []
 
     resp = await client.get(f"{LIST_URL}/{session.conversation_id}", headers=owner.headers)
@@ -158,7 +159,7 @@ async def test_workspace_b_cannot_see_a_conversations(
     assert (await client.get(url, headers=b.headers)).status_code == 404
     resp = await client.patch(url, json={"status": "closed"}, headers=b.headers)
     assert resp.status_code == 404
-    assert (await client.get(url, headers=a.headers)).json()["status"] == "needs_human"
+    assert (await client.get(url, headers=a.headers)).json()["status"] == "open"
 
     # Database level: with B's context, none of A's rows exist.
     async with app_role_engine.connect() as conn, conn.begin():

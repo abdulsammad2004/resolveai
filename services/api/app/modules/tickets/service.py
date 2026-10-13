@@ -25,7 +25,13 @@ from app.modules.audit import service as audit
 from app.modules.audit.models import ActorType
 from app.modules.auth.models import User
 from app.modules.conversations import service as conversations_service
-from app.modules.conversations.models import Contact, Conversation, ConversationStatus
+from app.modules.conversations.models import (
+    Contact,
+    Conversation,
+    ConversationStatus,
+    Message,
+    MessageRole,
+)
 from app.modules.conversations.schemas import ContactOut
 from app.modules.tickets.models import (
     PRIORITY_ORDER,
@@ -62,6 +68,8 @@ REVIEWABLE = frozenset({DraftStatus.PENDING, DraftStatus.EDITED})
 # conversation is closed instead: new messages start a new conversation, and only the
 # widget's "Still need help?" link reopens it (reopen_resolved_from_widget).
 REOPENABLE = frozenset({TicketStatus.REPLIED})
+# Never a ticket's intent: they say nothing about what the customer needs.
+SMALL_TALK_INTENTS = frozenset({"greeting", "thanks"})
 _SOURCE_MARKER = re.compile(r"\[(S\d+)\]")
 
 
@@ -90,13 +98,47 @@ def _fields(classification: Classification | None) -> dict:
     }
 
 
+def _stored_fields(stored: dict) -> dict:
+    return {
+        "intent": stored["intent"],
+        "priority": stored.get("priority") or TicketPriority.NORMAL,
+        "classification": stored,
+        "confidence": stored.get("confidence"),
+    }
+
+
+async def _strongest_classification(db: AsyncSession, conversation: Conversation) -> dict | None:
+    """The conversation's most telling customer classification: a specific intent over
+    "other", then the most confident. Greetings and thanks never count."""
+    stored = (
+        await db.execute(
+            select(Message.classification).where(
+                Message.workspace_id == conversation.workspace_id,
+                Message.conversation_id == conversation.id,
+                Message.role == MessageRole.CUSTOMER,
+                Message.classification.is_not(None),
+            )
+        )
+    ).scalars().all()
+    candidates = [c for c in stored if c.get("intent") not in SMALL_TALK_INTENTS]
+    return max(
+        candidates,
+        key=lambda c: (c["intent"] != "other", float(c.get("confidence") or 0.0)),
+        default=None,
+    )
+
+
 async def ensure_conversation_ticket(
     db: AsyncSession,
     conversation: Conversation,
     classification: Classification | None,
     trigger_text: str,
 ) -> Ticket:
-    """The conversation's open ticket, or a new one. A reused ticket's priority only rises."""
+    """The conversation's open ticket, or a new one. A reused ticket's priority only rises.
+
+    A new ticket's intent comes from the triggering message, or, when that one is small talk
+    or unclassified, from the conversation's strongest classification; never a greeting.
+    """
     ticket: Ticket | None = None
     if conversation.ticket_id is not None:
         ticket = (
@@ -118,6 +160,15 @@ async def ensure_conversation_ticket(
         await db.flush()
         return ticket
 
+    fields = _fields(classification)
+    if classification is None or classification.intent in SMALL_TALK_INTENTS:
+        strongest = await _strongest_classification(db, conversation)
+        if classification is None and strongest is not None:
+            fields = _stored_fields(strongest)
+        else:
+            # A greeting says nothing about the request; the trigger's priority still holds.
+            fields["intent"] = strongest["intent"] if strongest else "other"
+
     ticket = Ticket(
         workspace_id=conversation.workspace_id,
         conversation_id=conversation.id,
@@ -125,7 +176,7 @@ async def ensure_conversation_ticket(
         subject=subject_from(trigger_text),
         status=TicketStatus.NEW,
         source=TicketSource.WIDGET,
-        **_fields(classification),
+        **fields,
     )
     db.add(ticket)
     await db.flush()
