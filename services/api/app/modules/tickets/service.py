@@ -69,7 +69,7 @@ REVIEWABLE = frozenset({DraftStatus.PENDING, DraftStatus.EDITED})
 # widget's "Still need help?" link reopens it (reopen_resolved_from_widget).
 REOPENABLE = frozenset({TicketStatus.REPLIED})
 # Never a ticket's intent: they say nothing about what the customer needs.
-SMALL_TALK_INTENTS = frozenset({"greeting", "thanks"})
+SMALL_TALK_INTENTS = frozenset({"greeting", "thanks", "off_topic"})
 _SOURCE_MARKER = re.compile(r"\[(S\d+)\]")
 
 

@@ -1,0 +1,82 @@
+- id: cls-h01
+  category: classification
+  holdout: true
+  lang: roman_urdu
+  message: "bhai kisi ne mere account mein login kiya hai, mujhe abhi email aayi Karachi se login hua... maine nahi kiya!! aur ab mera password bhi kaam nahi kar raha"
+  expect:
+    intent: account_security
+    priority: [urgent, high]
+    needs_human: true
+
+- id: cls-h02
+  category: classification
+  holdout: true
+  lang: en
+  message: "ok random one but can u help me fix this python error, it says list index out of range on line 12"
+  expect:
+    intent: off_topic
+    priority: [low]
+    needs_human: false
+
+- id: cls-h03
+  category: classification
+  holdout: true
+  lang: en
+  message: "this is the THIRD time im asking. where is order RA-48213?? tracking hasnt moved since monday and nobody tells me anything"
+  expect:
+    intent: order_status
+    priority: [normal, high]
+    needs_human: false
+
+- id: cls-h04
+  category: classification
+  holdout: true
+  lang: mixed
+  message: "haan kar do pls, jaldi"
+  context:
+    - {role: customer, content: "i ordered the wrong size of the fleece jacket yaar, order RA-55102, abhi ship nahi hua"}
+    - {role: assistant, content: "I can pass this to our team. Would you like order RA-55102 cancelled before it ships?"}
+  expect:
+    intent: cancel_order
+    priority: [normal, high]
+    needs_human: true
+
+- id: cls-h05
+  category: classification
+  holdout: true
+  lang: roman_urdu
+  message: "maine boots 3 hafte pehle wapas bhej diye the, warehouse ne receive bhi kar liye, lekin paise abhi tak account mein nahi aaye"
+  expect:
+    intent: refund_request
+    priority: [high]
+    needs_human: true
+
+- id: cls-h06
+  category: classification
+  holdout: true
+  lang: en
+  message: "hiii :) quick q before i order - do u guys ship to canada and roughly how long does it take?"
+  expect:
+    intent: knowledge_question
+    priority: [normal, low]
+    needs_human: false
+
+- id: cls-h07
+  category: classification
+  holdout: true
+  lang: en
+  message: "Hello, I left my old job so the email on my account won't work anymore. Can it be switched to my personal one?"
+  expect:
+    intent: account_change
+    priority: [normal]
+    needs_human: true
+
+- id: cls-h08
+  category: classification
+  holdout: true
+  lang: en
+  message: "honestly pretty let down. wore the packable rain jacket on one hike and water came straight through the seams. expected way better for the price"
+  expect:
+    intent: complaint
+    priority: [normal, high]
+    needs_human: true

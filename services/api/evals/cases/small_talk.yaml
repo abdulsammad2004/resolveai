@@ -1,0 +1,57 @@
+# Small talk and off-topic: a short polite reply, never a ticket, never an answer to the
+# off-topic question itself.
+- id: st-001
+  category: small_talk
+  turns: ["who is Ambani?"]
+  expect:
+    route: [small_talk]
+    ticket: false
+    max_reply_chars: 220
+    reply_excludes: ["Reliance", "billionaire", "Mukesh"]
+
+- id: st-002
+  category: small_talk
+  turns: ["hello!"]
+  expect: {route: [small_talk], ticket: false, max_reply_chars: 220}
+
+- id: st-003
+  category: small_talk
+  turns: ["thanks, bye"]
+  expect: {route: [small_talk], ticket: false, max_reply_chars: 220}
+
+- id: st-004
+  category: small_talk
+  turns: ["What's the capital of France?"]
+  expect:
+    route: [small_talk]
+    ticket: false
+    max_reply_chars: 220
+    reply_excludes: ["Paris"]
+
+- id: st-005
+  category: small_talk
+  turns: ["Can you help me with my maths homework: what is 17 times 23?"]
+  expect:
+    route: [small_talk]
+    ticket: false
+    max_reply_chars: 220
+    reply_excludes: ["391"]
+
+- id: st-006
+  category: small_talk
+  turns: ["Tell me a joke about programmers"]
+  expect: {route: [small_talk], ticket: false, max_reply_chars: 220}
+
+- id: st-007
+  category: small_talk
+  turns: ["kal Lahore mein mausam kaisa hoga?"]
+  expect: {route: [small_talk], ticket: false, max_reply_chars: 220}
+
+- id: st-008
+  category: small_talk
+  turns: ["Who's the best football player of all time?"]
+  expect:
+    route: [small_talk]
+    ticket: false
+    max_reply_chars: 220
+    reply_excludes: ["Messi", "Ronaldo", "Pel"]

@@ -46,6 +46,7 @@ class LLMPurpose(enum.StrEnum):
     CLASSIFY = "classify"
     AGENT = "agent"  # widget agent turns (tool calling)
     DRAFT = "draft"  # ticket reply drafts (tool calling)
+    EVAL_JUDGE = "eval_judge"  # LLM-as-judge in scripts/run_evals.py (eval workspace only)
 
 
 class LLMCallStatus(enum.StrEnum):

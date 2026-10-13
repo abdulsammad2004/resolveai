@@ -56,6 +56,8 @@ export const intentLabels: Record<TicketIntent, string> = {
   cancel_order: "Cancel order",
   complaint: "Complaint",
   account_change: "Account change",
+  account_security: "Account security",
+  off_topic: "Off-topic",
   other: "Other",
 };
 

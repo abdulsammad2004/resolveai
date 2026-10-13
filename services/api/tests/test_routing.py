@@ -20,6 +20,8 @@ from app.modules.conversations.chat import (
     HANDOFF_MESSAGE,
     SMALL_TALK_REPLIES,
     OfferReply,
+    Route,
+    decide_route,
     is_low_content,
     offer_reply,
 )
@@ -449,3 +451,50 @@ async def test_greeting_triggered_ticket_takes_the_conversations_real_intent(
 
     [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
     assert (ticket["intent"], ticket["priority"]) == ("complaint", "urgent")
+
+
+async def test_off_topic_gets_a_short_redirect_and_no_ticket(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    llm = use_llm(app, "Mukesh Ambani is a businessman [S1]")
+    use_decider(app, {}, default=clf("off_topic", priority="low", confidence=0.9))
+
+    final = (await ask(client, session, "who is Ambani?"))[-1][1]
+
+    assert final["route"] == "small_talk"
+    assert final["content"] in SMALL_TALK_REPLIES["off_topic"]
+    assert llm.calls == 0
+    assert await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets") == []
+
+
+async def test_account_security_hands_off_even_with_low_confidence(
+    app: FastAPI, client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner, session = await session_for(client)
+    llm = use_llm(app, "unused [S1]")
+    use_decider(
+        app, {}, default=clf("account_security", priority="high", needs_human=0.95, confidence=0.4)
+    )
+
+    final = (await ask(client, session, "I can't get my 2FA code"))[-1][1]
+
+    assert final["route"] == "handoff"
+    assert llm.calls == 0
+    [ticket] = await rows(app_role_engine, owner.workspace_id, "SELECT * FROM tickets")
+    assert (ticket["intent"], ticket["priority"]) == ("account_security", "high")
+
+
+@pytest.mark.parametrize(
+    ("classification", "previous", "expected"),
+    [
+        (clf("account_security", confidence=0.3, needs_human=0.1), None, Route.HANDOFF),
+        (clf("account_security", confidence=0.9), "agent", Route.HANDOFF),
+        (clf("off_topic", priority="low", confidence=0.9), None, Route.SMALL_TALK),
+        (clf("off_topic", priority="low", confidence=0.4), None, Route.KNOWLEDGE),
+        (clf("off_topic", priority="low", confidence=0.9, needs_human=0.9), None, Route.HANDOFF),
+    ],
+    ids=["security-low-confidence", "security-follow-up", "off-topic", "off-topic-unsure", "off-topic-needs-human"],
+)
+def test_new_intent_routes(classification, previous, expected: Route) -> None:
+    assert decide_route(classification, previous) is expected

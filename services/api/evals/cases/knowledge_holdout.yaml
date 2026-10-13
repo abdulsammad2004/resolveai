@@ -1,0 +1,49 @@
+- id: kn-h01
+  category: knowledge
+  holdout: true
+  question: "if i order at like 4pm on a tuesday does it still go out that day?"
+  expect:
+    source: shipping
+    facts:
+      - "orders before 2 pm ET ship the same business day"
+      - "orders after 2 pm ship the next business day"
+
+- id: kn-h02
+  category: knowledge
+  holdout: true
+  question: "I opened a pack of the merino socks and they're the wrong colour, can I send them back?"
+  expect:
+    source: returns
+    facts:
+      - "opened merino socks cannot be returned"
+
+- id: kn-h03
+  category: knowledge
+  holdout: true
+  question: "my steel bottle doesn't keep coffee hot anymore, I've had it like 4 years. am I out of luck?"
+  expect:
+    source: warranty
+    facts:
+      - "lifetime warranty on the vacuum seal"
+      - "the bottle is replaced"
+
+- id: kn-h04
+  category: knowledge
+  holdout: true
+  question: "can i pay with bitcoin or do cash when it arrives?"
+  expect:
+    source: payments
+    facts:
+      - "no cryptocurrency"
+      - "no cash on delivery"
+
+- id: kn-h05
+  category: knowledge
+  holdout: true
+  question: "bought a tent last week and now it's cheaper on your site, can I get the difference back?"
+  expect:
+    source: payments
+    facts:
+      - "price difference refunded within 14 days of order"
+      - "once per item"
+      - "not for flash sales or clearance items"

@@ -22,7 +22,11 @@ from app.ai.decisions import (
     FakeDecisionClient,
     FallbackDecisionClient,
     LLMDecisionClient,
+    apply_policy,
+    classifier_spec,
+    fake_classification,
     get_decision_client,
+    parse_criteria,
 )
 from app.ai.llm import FakeLLMClient
 from app.core.config import get_settings
@@ -117,7 +121,8 @@ async def test_clef_request_and_parsing(client: AsyncClient, app_role_engine: As
     ]
     questions = body["questions"]
     assert questions["intent"]["type"] == "choice"
-    assert set(questions["intent"]["criteria"]) == set(INTENTS)
+    spec = classifier_spec(get_settings().classify_version)
+    assert set(questions["intent"]["criteria"]) == set(spec.intents)
     assert set(questions["priority"]["criteria"]) == set(PRIORITIES)
     assert "urgent" in questions["priority"]["criteria"]
     assert questions["needs_human"]["type"] == "noul"
@@ -175,7 +180,8 @@ async def test_clef_retries_once_then_llm_fallback_is_used_and_logged(
         ("cloudflare", "classify", "error"),
         ("fake", "classify", "ok"),
     ]
-    assert rows[1]["prompt_version"] == "classify_v2"
+    assert rows[0]["prompt_version"] == f"classify_criteria_{get_settings().classify_version}"
+    assert rows[1]["prompt_version"] == f"classify_{get_settings().classify_version}"
 
 
 async def test_timeouts_and_bad_output_raise_decision_error(client: AsyncClient) -> None:
@@ -241,3 +247,136 @@ def test_factory_picks_provider(monkeypatch: pytest.MonkeyPatch) -> None:
         assert isinstance(get_decision_client(), LLMDecisionClient)
     finally:
         get_decision_client.cache_clear()
+
+
+# Versions -----------------------------------------------------------------------------------
+
+V2_INTENTS = (
+    "greeting",
+    "thanks",
+    "knowledge_question",
+    "order_status",
+    "refund_request",
+    "cancel_order",
+    "complaint",
+    "account_change",
+    "other",
+)
+
+
+def test_parse_criteria() -> None:
+    questions = parse_criteria(
+        "# intent\nWhat is it about?\n- a: first: with a colon\n- b: second\n\n"
+        "# needs_human\nNeeds a person?\n- true: yes\n- false: no\n"
+    )
+    assert questions["intent"].instructions == "What is it about?"
+    assert questions["intent"].criteria == {"a": "first: with a colon", "b": "second"}
+    assert list(questions["needs_human"].criteria) == ["true", "false"]
+
+
+def test_v2_criteria_are_the_original_ones() -> None:
+    spec = classifier_spec("v2")
+    assert spec.intents == V2_INTENTS
+    assert spec.priorities == PRIORITIES
+    assert spec.intent.instructions == "What is the customer's latest message mainly about?"
+    assert spec.needs_human.instructions == (
+        "Does this need a human agent rather than an automated answer?"
+    )
+    assert "account access problem" in spec.intent.criteria["account_change"]
+
+
+def test_v3_adds_off_topic_and_account_security() -> None:
+    spec = classifier_spec("v3")
+    assert set(spec.intents) == set(V2_INTENTS) | {"off_topic", "account_security"}
+    assert set(spec.intents) <= set(INTENTS)
+    assert "access" not in spec.intent.criteria["account_change"]
+    assert "order" in spec.priority.criteria["normal"]  # routine order questions are normal
+
+
+@pytest.mark.parametrize(
+    ("priority", "needs_human", "expected"),
+    [("low", 0.2, ("high", 0.95)), ("normal", 0.99, ("high", 0.99)), ("urgent", 0.5, ("urgent", 0.95))],
+)
+def test_account_security_policy(priority: str, needs_human: float, expected: tuple) -> None:
+    c = apply_policy(fake_classification("account_security", priority=priority, needs_human=needs_human))
+    assert (c.priority, c.needs_human_prob) == expected
+
+
+def test_policy_leaves_other_intents_alone() -> None:
+    c = apply_policy(fake_classification("off_topic", priority="low", needs_human=0.1))
+    assert (c.intent, c.priority, c.needs_human_prob) == ("off_topic", "low", 0.1)
+
+
+async def test_clef_v3_sends_v3_criteria_and_applies_the_policy(
+    client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner = await signup(client, "owner@example.com")
+    payload = clef_payload()
+    answers = payload["result"]["answers"]
+    answers["intent"]["choice"] = "account_security"
+    answers["intent"]["probabilities"]["account_security"] = 0.9
+    answers["priority"]["choice"] = "normal"
+    answers["needs_human"]["noul"] = 0.4
+    recorder = Recorder([httpx.Response(200, json=payload)])
+    decider = CloudflareClefClient(
+        "acct-123", "token-abc", transport=httpx.MockTransport(recorder), version="v3"
+    )
+
+    result = await decider.classify("someone is in my account", [], workspace_id=owner.workspace_id)
+
+    body = json.loads(recorder.requests[0].content)
+    assert "off_topic" in body["questions"]["intent"]["criteria"]
+    assert (result.intent, result.priority, result.needs_human_prob) == (
+        "account_security",
+        "high",
+        0.95,
+    )
+    [row] = await llm_calls(app_role_engine, owner.workspace_id)
+    assert row["prompt_version"] == "classify_criteria_v3"
+
+
+async def test_v2_clef_ignores_intents_it_does_not_ask_about(client: AsyncClient) -> None:
+    owner = await signup(client, "owner@example.com")
+    payload = clef_payload()
+    payload["result"]["answers"]["intent"]["choice"] = "off_topic"
+    payload["result"]["answers"]["intent"]["probabilities"]["off_topic"] = 0.99
+    recorder = Recorder([httpx.Response(200, json=payload)])
+    decider = CloudflareClefClient(
+        "acct-123", "token-abc", transport=httpx.MockTransport(recorder), version="v2"
+    )
+    result = await decider.classify("who is Ambani?", [], workspace_id=owner.workspace_id)
+    assert result.intent == "refund_request"  # the most probable v2 option
+    assert set(result.intent_probs) == set(V2_INTENTS)
+
+
+def _verdict(intent: str) -> str:
+    return json.dumps(
+        {
+            "intent": intent,
+            "intent_confidence": 0.9,
+            "priority": "low",
+            "priority_confidence": 0.8,
+            "needs_human_probability": 0.05,
+        }
+    )
+
+
+async def test_llm_versions_use_their_prompt_and_options(
+    client: AsyncClient, app_role_engine: AsyncEngine
+) -> None:
+    owner = await signup(client, "owner@example.com")
+    llm = FakeLLMClient({"<customer_message>": _verdict("off_topic")})
+
+    result = await LLMDecisionClient(llm, version="v3").classify(
+        "who is Ambani?", [], workspace_id=owner.workspace_id
+    )
+    assert (result.intent, result.priority) == ("off_topic", "low")
+    assert set(result.intent_probs) == set(classifier_spec("v3").intents)
+
+    # v2 has no off_topic option: the answer is rejected like any malformed output.
+    with pytest.raises(DecisionError):
+        await LLMDecisionClient(llm, version="v2").classify(
+            "who is Ambani?", [], workspace_id=owner.workspace_id
+        )
+    rows = await llm_calls(app_role_engine, owner.workspace_id)
+    assert [r["prompt_version"] for r in rows] == ["classify_v3", "classify_v2"]

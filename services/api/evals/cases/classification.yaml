@@ -1,0 +1,201 @@
+# Classification cases: the latest message (+ optional earlier turns) -> intent, priority,
+# needs_human. `priority` lists every acceptable value. Holdout cases live in
+# classification_holdout.yaml and are not used while writing classifier prompts.
+- id: cls-001
+  category: classification
+  lang: en
+  message: "hi there"
+  expect: {intent: greeting, priority: [low], needs_human: false}
+
+- id: cls-002
+  category: classification
+  lang: en
+  message: "thanks so much, that's all I needed!"
+  expect: {intent: thanks, priority: [low], needs_human: false}
+
+- id: cls-003
+  category: classification
+  lang: en
+  message: "Where is my order RA-10421? It said it shipped on Monday."
+  expect: {intent: order_status, priority: [normal], needs_human: false}
+
+- id: cls-004
+  category: classification
+  lang: en
+  message: "can u tell me when RA-10427 will arrive"
+  expect: {intent: order_status, priority: [normal, low], needs_human: false}
+
+- id: cls-005
+  category: classification
+  lang: en
+  message: "I need my order RA-10430 by Friday for my brother's wedding, will it make it in time??"
+  expect: {intent: order_status, priority: [high, normal], needs_human: false}
+
+- id: cls-006
+  category: classification
+  lang: en
+  message: "How long does standard shipping take to Texas?"
+  expect: {intent: knowledge_question, priority: [low, normal], needs_human: false}
+
+- id: cls-007
+  category: classification
+  lang: en
+  message: "Do you accept PayPal?"
+  expect: {intent: knowledge_question, priority: [low, normal], needs_human: false}
+
+- id: cls-008
+  category: classification
+  lang: en
+  message: "What does the warranty cover on hiking boots?"
+  expect: {intent: knowledge_question, priority: [low, normal], needs_human: false}
+
+- id: cls-009
+  category: classification
+  lang: en
+  message: "I want a refund for the rain jacket from order RA-10423, it's too small."
+  expect: {intent: refund_request, priority: [normal], needs_human: true}
+
+- id: cls-010
+  category: classification
+  lang: en
+  message: "I returned my boots 3 weeks ago and still haven't got my money back. This is ridiculous."
+  expect: {intent: refund_request, priority: [high], needs_human: true}
+
+- id: cls-011
+  category: classification
+  lang: en
+  message: "Please cancel order RA-10422, I ordered the wrong notebook."
+  expect: {intent: cancel_order, priority: [normal], needs_human: true}
+
+- id: cls-012
+  category: classification
+  lang: en
+  message: "Can I change the shipping address on RA-10427 before it ships?"
+  expect: {intent: cancel_order, priority: [normal], needs_human: true}
+
+- id: cls-013
+  category: classification
+  lang: en
+  message: "The wool blanket I got is full of holes and smells awful. Really disappointed with your quality."
+  expect: {intent: complaint, priority: [high, normal], needs_human: true}
+
+- id: cls-014
+  category: classification
+  lang: en
+  message: "Your courier threw my parcel over the fence in the rain. Worst delivery ever. I'm furious."
+  expect: {intent: complaint, priority: [high], needs_human: true}
+
+- id: cls-015
+  category: classification
+  lang: en
+  message: "I'd like to update the email address on my account to my work email."
+  expect: {intent: account_change, priority: [normal, low], needs_human: true}
+
+- id: cls-016
+  category: classification
+  lang: en
+  message: "Please unsubscribe me from the marketing newsletter."
+  expect: {intent: account_change, priority: [low, normal], needs_human: true}
+
+- id: cls-017
+  category: classification
+  lang: en
+  message: "Someone logged into my account and changed my password, I can't get in anymore!"
+  expect: {intent: account_security, priority: [urgent, high], needs_human: true}
+
+- id: cls-018
+  category: classification
+  lang: en
+  message: "There are two charges on my card from you that I never made. I didn't order anything this month."
+  expect: {intent: account_security, priority: [urgent, high], needs_human: true}
+
+- id: cls-019
+  category: classification
+  lang: en
+  message: "I'm not getting the 2FA code by SMS so I can't log in."
+  expect: {intent: account_security, priority: [high, urgent], needs_human: true}
+
+- id: cls-020
+  category: classification
+  lang: en
+  message: "who is Ambani?"
+  expect: {intent: off_topic, priority: [low], needs_human: false}
+
+- id: cls-021
+  category: classification
+  lang: en
+  message: "Can you write me a python function that reverses a string?"
+  expect: {intent: off_topic, priority: [low], needs_human: false}
+
+- id: cls-022
+  category: classification
+  lang: en
+  message: "Who will win the cricket world cup this year?"
+  expect: {intent: off_topic, priority: [low], needs_human: false}
+
+- id: cls-023
+  category: classification
+  lang: en
+  message: "Hi! My account got hacked and someone is placing orders."
+  expect: {intent: account_security, priority: [urgent], needs_human: true}
+
+- id: cls-024
+  category: classification
+  lang: en
+  context:
+    - {role: customer, content: "Do you ship to Canada?"}
+    - {role: assistant, content: "I couldn't find that in our help docs. Would you like me to pass this to a teammate?"}
+  message: "yes please"
+  expect: {intent: knowledge_question, priority: [low, normal], needs_human: true}
+
+- id: cls-025
+  category: classification
+  lang: en
+  context:
+    - {role: customer, content: "Where's my order RA-10428?"}
+    - {role: assistant, content: "I can check that. What's the email address on the order?"}
+  message: "lucas.martin@example.com"
+  expect: {intent: order_status, priority: [normal, low], needs_human: false}
+
+# Roman Urdu and mixed language
+- id: cls-026
+  category: classification
+  lang: roman_urdu
+  message: "mera order RA-10424 kab tak aayega?"
+  expect: {intent: order_status, priority: [normal], needs_human: false}
+
+- id: cls-027
+  category: classification
+  lang: roman_urdu
+  message: "mujhe apne paise wapas chahiye, jacket bilkul kharab nikli"
+  expect: {intent: refund_request, priority: [high, normal], needs_human: true}
+
+- id: cls-028
+  category: classification
+  lang: mixed
+  message: "bhai please order RA-10422 cancel kar do, galti se order ho gaya"
+  expect: {intent: cancel_order, priority: [normal], needs_human: true}
+
+- id: cls-029
+  category: classification
+  lang: mixed
+  message: "return policy kya hai? kitne din mein return kar sakte hain?"
+  expect: {intent: knowledge_question, priority: [low, normal], needs_human: false}
+
+- id: cls-030
+  category: classification
+  lang: roman_urdu
+  message: "mera account hack ho gaya hai, koi aur login kar raha hai"
+  expect: {intent: account_security, priority: [urgent, high], needs_human: true}
+
+- id: cls-031
+  category: classification
+  lang: mixed
+  message: "shukriya, bohat help ho gayi"
+  expect: {intent: thanks, priority: [low], needs_human: false}
+
+- id: cls-032
+  category: classification
+  lang: mixed
+  message: "delivery boy ne parcel phaink diya, bohat bura service hai aap ki"
+  expect: {intent: complaint, priority: [high, normal], needs_human: true}
